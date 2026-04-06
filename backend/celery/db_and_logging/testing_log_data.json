@@ -1,0 +1,217 @@
+[
+  {
+    "run_id": "bfa0fc94-8b6a-5144-aef0-575452ff3d23",
+    "car": "mh04kw1827",
+    "run_summary": {
+      "start_ts": "2026-02-17T10:54:42.991855+00:00",
+      "end_ts": "2026-02-17T10:59:28.873680+00:00",
+      "total_duration_ms": 285882,
+      "status": "SUCCESS"
+    },
+    "steps": [
+      {
+        "step_number": 1,
+        "step_key": "NAVIGATION",
+        "status": "SUCCESS",
+        "start_ts": "2026-02-17T10:54:45.262176+00:00",
+        "section": null,
+        "data": {
+          "current_url": "https://www.policybazaar.com/motor-insurance/"
+        },
+        "end_ts": "2026-02-17T10:54:50.065237+00:00",
+        "duration_ms": 4802
+      },
+      {
+        "step_number": 2,
+        "step_key": "HUMAN_NOISE",
+        "status": "SUCCESS",
+        "start_ts": "2026-02-17T10:55:22.612438+00:00",
+        "section": null,
+        "data": {
+          "current_url": "https://www.policybazaar.com/motor-insurance/"
+        },
+        "end_ts": "2026-02-17T10:55:31.356516+00:00",
+        "duration_ms": 8744
+      },
+      {
+        "step_number": 3,
+        "step_key": "LOCATE_CAR_INPUT",
+        "status": "SUCCESS",
+        "start_ts": "2026-02-17T10:55:43.041313+00:00",
+        "section": null,
+        "data": {
+          "selector": "input.carRegistrationNumber",
+          "url": "https://www.policybazaar.com/motor-insurance/"
+        },
+        "end_ts": "2026-02-17T10:55:43.053421+00:00",
+        "duration_ms": 12
+      },
+      {
+        "step_number": 4,
+        "step_key": "FOCUS_CAR_INPUT",
+        "status": "SUCCESS",
+        "start_ts": "2026-02-17T10:55:44.148190+00:00",
+        "section": null,
+        "data": {
+          "url": "https://www.policybazaar.com/motor-insurance/"
+        },
+        "end_ts": "2026-02-17T10:55:44.286516+00:00",
+        "duration_ms": 137
+      },
+      {
+        "step_number": 5,
+        "step_key": "CAR_NUMBER",
+        "status": "SUCCESS",
+        "start_ts": "2026-02-17T10:55:45.121282+00:00",
+        "section": null,
+        "data": {
+          "current_url": "https://www.policybazaar.com/motor-insurance/",
+          "car_number": "mh04kw1827"
+        },
+        "end_ts": "2026-02-17T10:55:48.623387+00:00",
+        "duration_ms": 3502
+      },
+      {
+        "step_number": 6,
+        "step_key": "LOCATE_VIEW_PRICES",
+        "status": "SUCCESS",
+        "start_ts": "2026-02-17T10:55:50.968366+00:00",
+        "section": null,
+        "data": {
+          "selector": "button#btnSubmit:has-text('View Prices')",
+          "mouse_move": true,
+          "url": "https://www.policybazaar.com/motor-insurance/"
+        },
+        "end_ts": "2026-02-17T10:55:51.774229+00:00",
+        "duration_ms": 805
+      },
+      {
+        "step_number": 7,
+        "step_key": "VIEW_PRICES",
+        "status": "SUCCESS",
+        "start_ts": "2026-02-17T10:55:52.518296+00:00",
+        "section": null,
+        "data": {},
+        "end_ts": "2026-02-17T10:55:54.211583+00:00",
+        "duration_ms": 1693
+      },
+      {
+        "step_number": 8,
+        "step_key": "WAIT_ADDITIONAL_DETAILS",
+        "status": "SUCCESS",
+        "start_ts": "2026-02-17T10:56:30.232241+00:00",
+        "section": null,
+        "data": {
+          "selector": "input#txtName",
+          "url": "https://www.policybazaar.com/motor-insurance/"
+        },
+        "end_ts": "2026-02-17T10:56:30.243865+00:00",
+        "duration_ms": 11
+      },
+      {
+        "step_number": 9,
+        "step_key": "CUSTOMER_DETAILS",
+        "status": "SUCCESS",
+        "start_ts": "2026-02-17T10:56:31.805464+00:00",
+        "section": null,
+        "data": {
+          "current_url": "https://www.policybazaar.com/motor-insurance/",
+          "name": "Surbhi",
+          "phone": "8248336404"
+        },
+        "end_ts": "2026-02-17T10:56:38.467348+00:00",
+        "duration_ms": 6662
+      },
+      {
+        "step_number": 10,
+        "step_key": "POLICY_EXPIRY",
+        "status": "SUCCESS",
+        "start_ts": "2026-02-17T10:57:22.805192+00:00",
+        "section": null,
+        "data": {
+          "value": "Policy not expired yet"
+        },
+        "end_ts": "2026-02-17T10:57:24.019713+00:00",
+        "duration_ms": 1214
+      },
+      {
+        "step_number": 11,
+        "step_key": "CLAIM_STATUS",
+        "status": "SUCCESS",
+        "start_ts": "2026-02-17T10:57:24.805169+00:00",
+        "section": null,
+        "data": {
+          "value": "Not Sure"
+        },
+        "end_ts": "2026-02-17T10:57:25.079678+00:00",
+        "duration_ms": 274
+      },
+      {
+        "step_number": 12,
+        "step_key": "CAR_POPUP",
+        "status": "SUCCESS",
+        "start_ts": "2026-02-17T10:57:28.863985+00:00",
+        "section": null,
+        "data": {
+          "popup_found": false
+        },
+        "end_ts": "2026-02-17T10:58:00.247240+00:00",
+        "duration_ms": 31383
+      },
+      {
+        "step_number": 13,
+        "step_key": "ADDONS",
+        "status": "SUCCESS",
+        "start_ts": "2026-02-17T10:58:03.321241+00:00",
+        "section": null,
+        "data": {
+          "clicked": 9,
+          "skipped_already_checked": 0,
+          "url": "https://ci.policybazaar.com/v2/quotes?id=dEFmN2hMQTIvZk84Vmd3ZFFVcGk5Y0t5MlFpQlhWUlorV1dlZ1BZTExFQT0%3d&id2=aXFjVTVJT2w1ZGZtQ1BJWDVVd0NtQT09&t=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbnF1aXJ5SWQiOiIxMDI1NDQzNjY3IiwibmJmIjoxNzcxMzI1Nzk4LCJleHAiOjE3NzY0MjMzOTgsImlhdCI6MTc3MTMyNTc5OCwiaXNzIjoiQ2FyQ0oifQ.89gMj1eMs9W7yJ3ro_T_kXppm4kEmjIsYbGlNTNdCTc&isRenewal=False#addon"
+        },
+        "end_ts": "2026-02-17T10:58:26.267489+00:00",
+        "duration_ms": 22946
+      },
+      {
+        "step_number": 14,
+        "step_key": "CLOSE_QUOTE_POPUP",
+        "status": "SUCCESS",
+        "start_ts": "2026-02-17T10:58:26.267593+00:00",
+        "section": null,
+        "data": {
+          "popup_detected": true,
+          "popup_closed": true,
+          "url": "https://ci.policybazaar.com/v2/quotes?id=dEFmN2hMQTIvZk84Vmd3ZFFVcGk5Y0t5MlFpQlhWUlorV1dlZ1BZTExFQT0%3d&id2=aXFjVTVJT2w1ZGZtQ1BJWDVVd0NtQT09&t=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbnF1aXJ5SWQiOiIxMDI1NDQzNjY3IiwibmJmIjoxNzcxMzI1Nzk4LCJleHAiOjE3NzY0MjMzOTgsImlhdCI6MTc3MTMyNTc5OCwiaXNzIjoiQ2FyQ0oifQ.89gMj1eMs9W7yJ3ro_T_kXppm4kEmjIsYbGlNTNdCTc&isRenewal=False#addon"
+        },
+        "end_ts": "2026-02-17T10:58:27.256330+00:00",
+        "duration_ms": 988
+      }
+    ],
+    "akamai_events": [
+      {
+        "step_after": 1,
+        "step_key_after": "NAVIGATION",
+        "timestamp": "2026-02-17T10:55:20.155122+00:00",
+        "data": {
+          "url": "https://www.policybazaar.com/motor-insurance/"
+        }
+      },
+      {
+        "step_after": 7,
+        "step_key_after": "VIEW_PRICES",
+        "timestamp": "2026-02-17T10:56:27.104371+00:00",
+        "data": {
+          "url": "https://www.policybazaar.com/motor-insurance/"
+        }
+      },
+      {
+        "step_after": 9,
+        "step_key_after": "CUSTOMER_DETAILS",
+        "timestamp": "2026-02-17T10:57:13.785209+00:00",
+        "data": {
+          "url": "https://ci.policybazaar.com/v2/quotes?id=dEFmN2hMQTIvZk84Vmd3ZFFVcGk5Y0t5MlFpQlhWUlorV1dlZ1BZTExFQT0%3d&id2=aXFjVTVJT2w1ZGZtQ1BJWDVVd0NtQT09&t=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbnF1aXJ5SWQiOiIxMDI1NDQzNjY3IiwibmJmIjoxNzcxMzI1Nzk4LCJleHAiOjE3NzY0MjMzOTgsImlhdCI6MTc3MTMyNTc5OCwiaXNzIjoiQ2FyQ0oifQ.89gMj1eMs9W7yJ3ro_T_kXppm4kEmjIsYbGlNTNdCTc&isRenewal=False"
+        }
+      }
+    ]
+  }
+]

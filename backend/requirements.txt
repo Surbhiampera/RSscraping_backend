@@ -1,0 +1,45 @@
+# ================================
+# Core Backend Framework
+# ================================
+fastapi
+uvicorn
+
+# ================================
+# Database
+# ================================
+sqlalchemy
+psycopg2-binary
+
+# ================================
+# Auth
+# ================================
+python-jose[cryptography]
+passlib[bcrypt]
+bcrypt
+
+# ================================
+# Data Processing
+# ================================
+pandas
+openpyxl
+rapidfuzz
+
+# ================================
+# File Parsing
+# ================================
+pdfplumber
+python-multipart
+
+# ================================
+# Background Tasks
+# ================================
+celery
+redis
+
+# ================================
+# Utilities
+# ================================
+pydantic
+pydantic-settings
+python-dotenv
+loguru

@@ -1,0 +1,111 @@
+ #     sticky_filter = page.locator(
+            #         ".stickyHeaderFilter .filter:has(img[src*='filter3.svg'])"
+            #     )
+            #     if await sticky_filter.count() > 0:
+            #         await sticky_filter.first.click()
+            #         await human_delay(500, 1000)
+            #         print("  → Sticky header Addons filter clicked successfully")
+            #     else:
+            #         print("  → Sticky header Addons filter not found, proceeding...")
+
+            #     await human_delay(800, 1200)
+
+            #     print("Step 13.1: Opening ADDONS popup")
+            #     try:
+            #         if not await page.locator(".popupWrapper").is_visible():
+            #             await page.locator("p.smallerFont:has-text('Addons')").first.evaluate(
+            #                 "el => el.click()"
+            #             )
+            #             await human_delay(500, 1000)
+
+            #         await page.wait_for_selector(".popupBody.padding0", timeout=10000)
+            #         print("  → ADDONS popup opened successfully")
+            #     except Exception as e:
+            #         print(f"  → Error opening ADDONS popup: {str(e)}")
+
+            #     await human_delay(800, 1200)
+
+            #     popup = page.locator(".popupBody.padding0")
+
+            #     print("Step 13.2: Clicking Addons tab")
+            #     try:
+            #         addons_tab = popup.locator(".tabItem:has-text('Addons')")
+            #         await addons_tab.evaluate("el => el.click()")
+            #         await human_delay(1500, 2000)
+            #         print("  → Addons tab clicked successfully")
+            #     except Exception as e:
+            #         print(f"  → Error clicking Addons tab: {str(e)}")
+
+            #     print("Step 13.3: Selecting allowed addons")
+            #     try:
+            #         labels = popup.locator(".cssTabContent .customCheckbox label")
+            #         total = await labels.count()
+
+            #         print(f"  → Total checkbox items found: {total}")
+
+            #         clicked = 0
+            #         skipped_already_checked = 0
+
+            #         for i in range(total):
+            #             label = labels.nth(i)
+
+            #             text_locator = label.locator(".text.valignMiddle")
+            #             square_locator = label.locator(".square")
+
+            #             if await text_locator.count() == 0:
+            #                 continue
+
+            #             title = (await text_locator.inner_text()).strip()
+
+            #             if title in ALLOWED_ADDONS:
+
+            #                 is_checked = await label.locator(
+            #                     "input[type='checkbox']"
+            #                 ).is_checked()
+
+            #                 if is_checked:
+            #                     print(f"  → Already checked → Skipping: {title}")
+            #                     skipped_already_checked += 1
+            #                     continue
+
+            #                 print(f"  → Clicking allowed addon: {title}")
+            #                 await square_locator.click()
+            #                 await human_delay(600, 900)
+            #                 clicked += 1
+            #             else:
+            #                 print(f"  → Skipping not allowed: {title}")
+
+            #         print(f"  → ✅ Total Allowed Addons Clicked: {clicked}")
+            #         print(f"  → ☑️ Already Checked (Skipped): {skipped_already_checked}")
+            #     except Exception as e:
+            #         print(f"  → Error selecting addons: {str(e)}")
+
+            #     print("Step 13.4: Clicking Apply Filters button")
+            #     if page.is_closed():
+            #         raise Exception("❌ Page closed unexpectedly!")
+
+            #     await human_delay(800, 1200)
+
+            #     footer = page.locator("div.popupFooter")
+            #     await footer.wait_for(state="visible", timeout=15000)
+
+            #     apply_button = footer.locator("div.row div.col div.primaryBtnV2.m0")
+
+            #     count = await apply_button.count()
+            #     if count == 0:
+            #         raise Exception("❌ Apply Filters button not found!")
+
+            #     print("  → Clicking Apply Filters...")
+            #     try:
+            #         await apply_button.first.scroll_into_view_if_needed()
+            #         await apply_button.first.click(timeout=5000)
+            #     except Exception as e:
+            #         print(f"  → Normal click failed ({e}), trying force click...")
+            #         await apply_button.first.click(force=True)
+
+            #     print("  → ✅ Apply Filters clicked successfully.")
+            #     await human_delay(5000, 6000)
+            #     print("  → Waiting for page to update...")
+            #     await human_delay(3000, 4000)
+            #     print("  → Page updated successfully")
+            #     log.step_success("STEP_13_ADDONS")
