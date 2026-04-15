@@ -1,3 +1,4 @@
+from email.quoprimime import quote
 import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -26,7 +27,12 @@ class Settings(BaseSettings):
     # -------------------------
     # Redis
     # -------------------------
-    REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_HOST: str = "localhost"
+    REDIS_KEY: str = "defaultkey"
+    
+    @property
+    def REDIS_URL(self) -> str:
+        return f"rediss://:{self.REDIS_KEY}@{self.REDIS_HOST}:6380"
 
     # -------------------------
     # App

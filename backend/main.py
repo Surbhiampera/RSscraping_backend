@@ -6,7 +6,7 @@ from backend.routes import upload
 from backend.db.session import get_db
 from backend.db.models import Base
 from backend.routes import auth, upload, scrape, results, dashboard, admin, preview
-from backend.routes import history, quotes, activity, usage, profile
+from backend.routes import history, quotes, activity, usage, profile, insights
 from backend.db.session import Base, engine
 from sqlalchemy import text
 
@@ -54,6 +54,7 @@ app.include_router(quotes.router, prefix="/api/quotes", tags=["Quotes"])
 app.include_router(activity.router, prefix="/api/activity", tags=["Activity"])
 app.include_router(usage.router, prefix="/api/usage", tags=["Usage"])
 app.include_router(profile.router, prefix="/api/profile", tags=["Profile"])
+app.include_router(insights.router, prefix="/api/insights", tags=["Insights"])
 
 
 # ✅ Health Check Endpoint
