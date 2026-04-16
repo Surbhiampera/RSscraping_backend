@@ -1,23 +1,19 @@
 import asyncio
 import json
-import os
 import random
 from typing import Tuple, Set
-# from pb_flow_plugin import is_network_error
 from urllib.parse import urlparse
-from dotenv import load_dotenv
 from playwright.async_api import Browser, BrowserContext, Page, Playwright, Response, expect
 
-# Load environment variables once for the module
-load_dotenv()
+from backend.core.config import settings
 
 # ========================
 # PROXY CONFIG (OXYLABS)
 # ========================
 PROXY_SETTINGS = {
-    "server": os.environ.get("PB_PROXY_SERVER"),
-    "username": os.environ.get("PB_PROXY_USERNAME"),
-    "password": os.environ.get("PB_PROXY_PASSWORD"),
+    "server": settings.PB_PROXY_SERVER,
+    "username": settings.PB_PROXY_USERNAME,
+    "password": settings.PB_PROXY_PASSWORD,
 }
 
 # ========================

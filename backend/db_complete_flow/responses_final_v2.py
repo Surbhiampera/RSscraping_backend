@@ -7,10 +7,8 @@ import psycopg2.extras
 import pandas as pd
 from pathlib import Path
 from psycopg2.extras import Json
-from dotenv import load_dotenv
 
-
-load_dotenv()
+from backend.core.config import settings
 
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent
 _RTO_CSV = str(_BACKEND_ROOT / "rto_locator" / "RTO_vehicle_codes.csv")
@@ -48,13 +46,13 @@ rto_locator = RTOLocator()
 
 
 # ─── DB CONFIG ────────────────────────────────────────────────────────────────
-DB_HOST     = os.environ.get("DB_HOST")
-DB_PORT     = os.environ.get("DB_PORT", 5432)
-DB_NAME     = os.environ.get("DB_NAME")
-DB_USER     = os.environ.get("DB_USER")
-DB_PASSWORD = os.environ.get("DB_PASSWORD")
-DB_SSL      = os.environ.get("DB_SSL", "false").lower() == "true"
-DB_SSL_MODE = os.environ.get("DB_SSL_MODE", "require")
+DB_HOST     = settings.DB_HOST
+DB_PORT     = settings.DB_PORT
+DB_NAME     = settings.DB_NAME
+DB_USER     = settings.DB_USER
+DB_PASSWORD = settings.DB_PASSWORD
+DB_SSL      = settings.DB_SSL
+DB_SSL_MODE = settings.DB_SSL_MODE
 
 PLANS_DEFAULT_DIR = "plans_json_validation"
 PLANS_MEDIAN_DIR  = "plans_median"

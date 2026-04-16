@@ -1,18 +1,18 @@
-from email.quoprimime import quote
 import os
+from urllib.parse import quote
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
 
     # Database
-    db_host: str = "localhost"
-    db_port: int = 5432
-    db_name: str = "insurance_v2"
-    db_user: str = "postgres"
-    db_password: str = "postgres"
-    db_ssl: bool = False
-    db_ssl_mode: str = "prefer"
+    DB_HOST: str = "localhost"
+    DB_PORT: int = 5432
+    DB_NAME: str = "insurance_v2"
+    DB_USER: str = "postgres"
+    DB_PASSWORD: str = "postgres"
+    DB_SSL: bool = False
+    DB_SSL_MODE: str = "prefer"
 
     # JWT
     JWT_SECRET_KEY: str = "super-secret"
@@ -22,23 +22,30 @@ class Settings(BaseSettings):
     # -------------------------
     # CORS
     # -------------------------
-    cors_origins: str = "http://localhost:5173,http://localhost:3000,http://localhost:8080"
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000,http://localhost:8080"
 
     # -------------------------
     # Redis
     # -------------------------
     REDIS_HOST: str = "localhost"
     REDIS_KEY: str = "defaultkey"
-    
+
     @property
     def REDIS_URL(self) -> str:
-        return f"rediss://:{self.REDIS_KEY}@{self.REDIS_HOST}:6380"
+        return f"rediss://:{quote(self.REDIS_KEY, safe='')}@{self.REDIS_HOST}:6380"
+
+    # -------------------------
+    # Proxy (Scraper)
+    # -------------------------
+    PB_PROXY_SERVER: str = ""
+    PB_PROXY_USERNAME: str = ""
+    PB_PROXY_PASSWORD: str = ""
 
     # -------------------------
     # App
     # -------------------------
-    app_env: str = "development"
-    app_debug: bool = True
+    APP_ENV: str = "development"
+    APP_DEBUG: bool = True
 
     # -------------------------
     # Build DATABASE_URL
@@ -46,12 +53,12 @@ class Settings(BaseSettings):
     @property
     def DATABASE_URL(self) -> str:
         base_url = (
-            f"postgresql+psycopg2://{self.db_user}:{self.db_password}"
-            f"@{self.db_host}:{self.db_port}/{self.db_name}"
+            f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}"
+            f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
         )
 
-        if self.db_ssl:
-            base_url += f"?sslmode={self.db_ssl_mode}"
+        if self.DB_SSL:
+            base_url += f"?sslmode={self.DB_SSL_MODE}"
 
         return base_url
 
@@ -60,7 +67,23 @@ class Settings(BaseSettings):
     # -------------------------
     @property
     def cors_origins_list(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+
+    # -------------------------
+    # DB_CONFIG dict for psycopg2
+    # -------------------------
+    @property
+    def DB_CONFIG(self) -> dict:
+        params = {
+            "host": self.DB_HOST,
+            "port": self.DB_PORT,
+            "database": self.DB_NAME,
+            "user": self.DB_USER,
+            "password": self.DB_PASSWORD,
+        }
+        if self.DB_SSL:
+            params["sslmode"] = self.DB_SSL_MODE
+        return params
 
     # -------------------------
     # Pydantic v2 Settings

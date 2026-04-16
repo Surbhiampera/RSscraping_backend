@@ -4,20 +4,9 @@ import json
 import re
 import psycopg2
 from psycopg2.extras import Json
-from dotenv import load_dotenv
 import pandas as pd
 
-
-load_dotenv()
-
-
-DB_HOST = os.environ.get("DB_HOST")
-DB_PORT = os.environ.get("DB_PORT")
-DB_NAME = os.environ.get("DB_NAME")
-DB_USER = os.environ.get("DB_USER")
-DB_PASSWORD = os.environ.get("DB_PASSWORD")
-DB_SSL = os.environ.get("DB_SSL", "false").lower() == "true"
-DB_SSL_MODE = os.environ.get("DB_SSL_MODE", "require")
+from backend.core.config import settings
 
 
 # ✅ Hardcoded run_id
@@ -25,18 +14,7 @@ HARDCODED_RUN_ID = "11111111-1111-1111-1111-111111111111"
 
 
 def get_connection():
-    conn_params = {
-        "host": DB_HOST,
-        "port": DB_PORT,
-        "dbname": DB_NAME,
-        "user": DB_USER,
-        "password": DB_PASSWORD
-    }
-
-    if DB_SSL:
-        conn_params["sslmode"] = DB_SSL_MODE
-
-    return psycopg2.connect(**conn_params)
+    return psycopg2.connect(**settings.DB_CONFIG)
 
 
 def extract_ids_from_filename(filename):

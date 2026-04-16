@@ -1,19 +1,16 @@
 import psycopg2
 import pandas as pd
-import os
-from dotenv import load_dotenv
 
-
-load_dotenv("/home/ampara/Documents/auto-gather-pro/backend/.env")
+from backend.core.config import settings
 
 # -------------------------------
 # DB CONFIG
 # -------------------------------
-DB_HOST     = os.environ.get("DB_HOST")
-DB_PORT     = os.environ.get("DB_PORT")
-DB_NAME     = os.environ.get("DB_NAME")
-DB_USER     = os.environ.get("DB_USER")
-DB_PASSWORD = os.environ.get("DB_PASSWORD")
+DB_HOST     = settings.DB_HOST
+DB_PORT     = settings.DB_PORT
+DB_NAME     = settings.DB_NAME
+DB_USER     = settings.DB_USER
+DB_PASSWORD = settings.DB_PASSWORD
 
 
 RUN_ID      = "11111111-1111-1111-1111-111111111111"
