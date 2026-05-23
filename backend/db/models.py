@@ -257,6 +257,13 @@ class ScrapeRunInput(Base):
         nullable=True
     )
 
+    # JSON string holding structured fields for no-reg upload mode
+    # (Make, Model, Variant, CC, Fuel Type, RTO/Location, NCB %, etc.)
+    input_data = Column(
+        Text,
+        nullable=True
+    )
+
     created_at = Column(
         DateTime,
         default=datetime.utcnow,

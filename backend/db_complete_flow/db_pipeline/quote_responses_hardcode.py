@@ -2,16 +2,17 @@ import os
 import json
 import psycopg2
 from psycopg2.extras import Json
+from dotenv import load_dotenv
 
-from backend.core.config import settings
+load_dotenv()
 
-DB_HOST = settings.DB_HOST
-DB_PORT = settings.DB_PORT
-DB_NAME = settings.DB_NAME
-DB_USER = settings.DB_USER
-DB_PASSWORD = settings.DB_PASSWORD
-DB_SSL = settings.DB_SSL
-DB_SSL_MODE = settings.DB_SSL_MODE
+DB_HOST = os.environ.get("DB_HOST")
+DB_PORT = os.environ.get("DB_PORT")
+DB_NAME = os.environ.get("DB_NAME")
+DB_USER = os.environ.get("DB_USER")
+DB_PASSWORD = os.environ.get("DB_PASSWORD")
+DB_SSL = os.environ.get("DB_SSL", "false").lower() == "true"
+DB_SSL_MODE = os.environ.get("DB_SSL_MODE", "require")
 
 HARDCODED_RUN_ID = "11111111-1111-1111-1111-111111111111"
 

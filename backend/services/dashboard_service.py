@@ -1,22 +1,37 @@
 from typing import Optional
 from uuid import UUID
 from sqlalchemy.orm import Session
-from sqlalchemy import func
-from backend.db.models import User, ScrapeRun, CarInfo, StatusEnum
+from sqlalchemy import func, cast, String as SAString
+from backend.db.models import User, ScrapeRun, ScrapeRunInput, StatusEnum
+
+# Status strings written by the Celery pipeline and the ORM path respectively.
+_SUCCESS_STATUSES  = ("SUCCESS", "PASS")
+_FAILURE_STATUSES  = ("FAIL", "FAILURE")
+_PENDING_STATUSES  = ("PENDING", "pending", "PROCESSING", "processing")
+
+
+def _status_in(column, values: tuple):
+    return cast(column, SAString).in_(values)
 
 
 def get_system_metrics(db: Session, vehicle_number: Optional[str] = None) -> dict:
-    car_query = db.query(CarInfo)
-    if vehicle_number:
-        car_query = car_query.filter(CarInfo.registration_number == vehicle_number.upper())
+    # Total uploaded = ScrapeRunInput rows (one per car)
+    total_cars = db.query(func.count(ScrapeRunInput.id)).scalar() or 0
 
-    total_cars = car_query.count()
-    total_success = car_query.filter(CarInfo.status == StatusEnum.PASS_).count()
-    total_failed = car_query.filter(CarInfo.status == StatusEnum.FAIL).count()
-    total_pending = car_query.filter(
-        CarInfo.status.in_([StatusEnum.PENDING, StatusEnum.PROCESSING])
-    ).count()
-    total_runs = db.query(ScrapeRun).count()
+    # Success / fail / pending counts come from ScrapeRun.status
+    total_success = db.query(func.count(ScrapeRun.run_id)).filter(
+        _status_in(ScrapeRun.status, _SUCCESS_STATUSES)
+    ).scalar() or 0
+
+    total_failed = db.query(func.count(ScrapeRun.run_id)).filter(
+        _status_in(ScrapeRun.status, _FAILURE_STATUSES)
+    ).scalar() or 0
+
+    total_pending = db.query(func.count(ScrapeRun.run_id)).filter(
+        _status_in(ScrapeRun.status, _PENDING_STATUSES)
+    ).scalar() or 0
+
+    total_runs = db.query(func.count(ScrapeRun.run_id)).scalar() or 0
     total_users = db.query(User).filter(User.is_active == True).count()
 
     return {
@@ -36,14 +51,21 @@ def get_user_metrics(db: Session, user_id: UUID) -> dict:
     total_cars = 0
     total_success = 0
     total_failed = 0
+
     if run_ids:
-        total_cars = db.query(CarInfo).filter(CarInfo.run_id.in_(run_ids)).count()
-        total_success = db.query(CarInfo).filter(
-            CarInfo.run_id.in_(run_ids), CarInfo.status == StatusEnum.PASS_
-        ).count()
-        total_failed = db.query(CarInfo).filter(
-            CarInfo.run_id.in_(run_ids), CarInfo.status == StatusEnum.FAIL
-        ).count()
+        total_cars = db.query(func.count(ScrapeRunInput.id)).filter(
+            ScrapeRunInput.run_id.in_(run_ids)
+        ).scalar() or 0
+
+        total_success = db.query(func.count(ScrapeRun.run_id)).filter(
+            ScrapeRun.run_id.in_(run_ids),
+            _status_in(ScrapeRun.status, _SUCCESS_STATUSES),
+        ).scalar() or 0
+
+        total_failed = db.query(func.count(ScrapeRun.run_id)).filter(
+            ScrapeRun.run_id.in_(run_ids),
+            _status_in(ScrapeRun.status, _FAILURE_STATUSES),
+        ).scalar() or 0
 
     return {
         "my_upload_count": len(runs),
@@ -64,17 +86,23 @@ def get_user_admin_stats(db: Session, user: "User") -> dict:
     last_upload = None
 
     if run_ids:
-        total_cars = db.query(CarInfo).filter(CarInfo.run_id.in_(run_ids)).count()
-        success_count = db.query(CarInfo).filter(
-            CarInfo.run_id.in_(run_ids), CarInfo.status == StatusEnum.PASS_
-        ).count()
-        fail_count = db.query(CarInfo).filter(
-            CarInfo.run_id.in_(run_ids), CarInfo.status == StatusEnum.FAIL
-        ).count()
-        latest = db.query(func.max(ScrapeRun.created_at)).filter(
+        total_cars = db.query(func.count(ScrapeRunInput.id)).filter(
+            ScrapeRunInput.run_id.in_(run_ids)
+        ).scalar() or 0
+
+        success_count = db.query(func.count(ScrapeRun.run_id)).filter(
+            ScrapeRun.run_id.in_(run_ids),
+            _status_in(ScrapeRun.status, _SUCCESS_STATUSES),
+        ).scalar() or 0
+
+        fail_count = db.query(func.count(ScrapeRun.run_id)).filter(
+            ScrapeRun.run_id.in_(run_ids),
+            _status_in(ScrapeRun.status, _FAILURE_STATUSES),
+        ).scalar() or 0
+
+        last_upload = db.query(func.max(ScrapeRun.created_at)).filter(
             ScrapeRun.user_id == user.id
         ).scalar()
-        last_upload = latest
 
     return {
         "id": str(user.id),

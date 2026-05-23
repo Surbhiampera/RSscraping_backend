@@ -7,16 +7,17 @@ import psycopg2.extras
 import pandas as pd
 from pathlib import Path
 from psycopg2.extras import Json
+from dotenv import load_dotenv
 
-from backend.core.config import settings
 
-_BACKEND_ROOT = Path(__file__).resolve().parent.parent
-_RTO_CSV = str(_BACKEND_ROOT / "rto_locator" / "RTO_vehicle_codes.csv")
+load_dotenv()
 
 
 # ─── RTO LOCATOR ─────────────────────────────────────────────────────────────
 class RTOLocator:
-    def __init__(self, csv_path: str = _RTO_CSV):
+    def __init__(self, csv_path=None):
+        if csv_path is None:
+            csv_path = Path(__file__).parent.parent / "rto_locator" / "RTO_vehicle_codes.csv"
         df = pd.read_csv(csv_path)
         df["RegNo"] = df["RegNo"].str.upper().str.strip()
         self._map = {
@@ -42,30 +43,32 @@ class RTOLocator:
 
 
 # ─── SINGLETON ───────────────────────────────────────────────────────────────
-rto_locator = RTOLocator()
+rto_locator = RTOLocator(Path(__file__).parent.parent / "rto_locator" / "RTO_vehicle_codes.csv")
 
 
 # ─── DB CONFIG ────────────────────────────────────────────────────────────────
-DB_HOST     = settings.DB_HOST
-DB_PORT     = settings.DB_PORT
-DB_NAME     = settings.DB_NAME
-DB_USER     = settings.DB_USER
-DB_PASSWORD = settings.DB_PASSWORD
-DB_SSL      = settings.DB_SSL
-DB_SSL_MODE = settings.DB_SSL_MODE
+DB_HOST     = os.environ.get("DB_HOST")
+DB_PORT     = os.environ.get("DB_PORT", 5432)
+DB_NAME     = os.environ.get("DB_NAME")
+DB_USER     = os.environ.get("DB_USER")
+DB_PASSWORD = os.environ.get("DB_PASSWORD")
+DB_SSL      = os.environ.get("DB_SSL", "false").lower() == "true"
+DB_SSL_MODE = os.environ.get("DB_SSL_MODE", "require")
 
 PLANS_DEFAULT_DIR = "plans_json_validation"
 PLANS_MEDIAN_DIR  = "plans_median"
+
 
 # ─── MANUAL OVERRIDE ─────────────────────────────────────────────────────────
 RUN_ID_REG_NO_OVERRIDE = {
     "11111111-1111-1111-1111-111111111111": "MH04KW1827",
 }
 
+
 # ─── PIPELINE CONFIG TOGGLES ─────────────────────────────────────────────────
 FORCE_REPROCESS = True
 USE_LOCAL_FILES = False   # True  → load plan JSONs from local disk
-                           # False → fetch plan JSONs from DB
+                          # False → fetch plan JSONs from DB
 
 
 def get_conn():
@@ -279,6 +282,7 @@ def fetch_plan_maps_from_db(conn, run_id: str) -> tuple[dict, dict]:
           f"median={len(median_map)} (by plan_id+combo)")
 
     return default_map, median_map
+
 
 # ─── UNIFIED PLAN MAP LOADER ──────────────────────────────────────────────────
 def load_plan_maps(conn, run_id: str, reg_no: str) -> tuple[dict, dict]:
@@ -636,7 +640,15 @@ def build_plan_rows(run_id, quotes_rows: list,
                     if not plan_id or not insurer_name:
                         continue
 
-                    dedup_key = (plan_id, addon_combo, idv_type)
+                    premium = pd.get("premium")
+
+                    dedup_key = (
+                        plan_id,
+                        addon_combo,
+                        premium,
+                        idv_type,
+                    )
+
                     if dedup_key in seen:
                         continue
                     seen.add(dedup_key)

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List
 
 # Ensure db_complete_flow is importable so we can reuse its Excel logic
-_db_flow_dir = str(Path(__file__).resolve().parent.parent / "db_complete_flow")
+_db_flow_dir = str(Path(__file__).resolve().parent.parent / "db_complete_flow" / "db_pipeline")
 if _db_flow_dir not in sys.path:
     sys.path.insert(0, _db_flow_dir)
 
@@ -86,34 +86,26 @@ def export_to_json(rows: List[dict]) -> bytes:
 # -------------------------------
 # EXCEL EXPORT (MAIN FIX)
 # -------------------------------
-def export_to_excel(rows: List[dict]) -> bytes:
+def export_to_excel(rows: List[dict], idv_type: str = None) -> bytes:
     """
-    Fully aligned with flatdb_excel.py logic:
-    - Column order
-    - Renaming
-    - Sorting
-    - Insurer grouping
-    - Empty rows between insurers
+    Produce an Excel file using the same pipeline logic as flatdb_excel.py.
+    If idv_type ('default' or 'median') is given, returns a single-sheet workbook
+    for that type only. Otherwise returns Default + Median sheets.
     """
     import pandas as pd
-    from flatdb_excel import build_excel_df
+    from flatdb_excel import build_excel_bytes, build_excel_bytes_for_type
 
     rows = _normalize_rows(_strip_internal(rows))
 
-    output = io.BytesIO()
-
     if not rows:
+        output = io.BytesIO()
         pd.DataFrame().to_excel(output, index=False, engine="openpyxl")
         output.seek(0)
         return output.read()
 
-    # ✅ Use same exact builder (core logic reused)
-    final_df = build_excel_df(rows)
-
-    final_df.to_excel(output, index=False, engine="openpyxl")
-
-    output.seek(0)
-    return output.read()
+    if idv_type:
+        return build_excel_bytes_for_type(rows, idv_type)
+    return build_excel_bytes(rows)
 
 
 # -------------------------------

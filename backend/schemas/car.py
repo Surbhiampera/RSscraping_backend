@@ -72,6 +72,7 @@ class ExportRequest(BaseModel):
     filter: Optional[ExportFilter] = None
     ids: Optional[List[UUID]] = None
     run_id: Optional[UUID] = None
+    idv_type: Optional[str] = None  # "default" or "median"
 
 
 class FlatOutputOut(BaseModel):

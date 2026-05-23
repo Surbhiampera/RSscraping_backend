@@ -8,6 +8,7 @@ class UploadPreviewRow(BaseModel):
     car_number: str
     is_valid: bool
     error: Optional[str] = None
+    input_data: Optional[dict] = None  # structured fields for no-reg rows
 
 
 class FieldMapping(BaseModel):
@@ -78,16 +79,17 @@ class ParsedUploadResult(BaseModel):
 class UploadResponse(BaseModel):
     run_id: UUID  # last run (kept for backward compat)
     run_ids: List[UUID]
-    file_id: UUID
+    file_id: Optional[UUID] = None
     original_filename: str
     total_rows: int
     valid_rows: int
     invalid_rows: int
     header_present: bool
     schema_mapping: dict
-    metadata: DetectionMetadata
-    quality: QualityResult
+    metadata: Optional[DetectionMetadata] = None
+    quality: Optional[QualityResult] = None
     preview: List[UploadPreviewRow]
+    upload_mode: str = "with_reg"  # "with_reg" or "without_reg"
 
 
 class ScrapeRunOut(BaseModel):

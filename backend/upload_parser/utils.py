@@ -51,10 +51,50 @@ CLAIM_VALID_VALUES = {
     "1", "0"
 }
 
+# ----------------------------------
+# Structured field aliases (no-reg upload mode)
+# Fields: Sr No | RTO/Location | Make | Model | Variant | CC | CC Range |
+#         Fuel Type | Insured Company | Earned NCB % | Tariff Rate | YOM/Age
+# ----------------------------------
+MAKE_HEADER_ALIASES       = ["make", "manufacturer", "brand", "car make", "vehicle make"]
+MODEL_HEADER_ALIASES      = ["model", "car model", "vehicle model"]
+VARIANT_HEADER_ALIASES    = ["variant", "version", "trim", "car variant"]
+CC_HEADER_ALIASES         = ["cc", "cubic capacity", "engine cc", "displacement"]
+CC_RANGE_HEADER_ALIASES   = ["cc range", "engine range", "cc bucket", "displacement range"]
+FUEL_TYPE_HEADER_ALIASES  = ["fuel", "fuel type", "fuel kind", "propulsion"]
+RTO_HEADER_ALIASES        = ["rto", "location", "rto location", "rto/location", "rto code",
+                              "city", "rto no", "registration location"]
+INSURED_COMPANY_HEADER_ALIASES = ["insured company", "insurer", "company", "insurance company"]
+TARIFF_RATE_HEADER_ALIASES     = ["tariff rate", "tariff", "tariff %", "tariff_rate"]
+YOM_HEADER_ALIASES             = ["yom", "year of manufacture", "year", "manufacture year",
+                                   "model year", "age", "yom / age", "yom/age"]
+SR_NO_HEADER_ALIASES           = ["sr no", "sr", "serial", "s.no", "serial no", "sl no"]
+
+# Dict used by the no-reg column mapper
+STRUCTURED_FIELD_ALIASES = {
+    "make":             MAKE_HEADER_ALIASES,
+    "model":            MODEL_HEADER_ALIASES,
+    "variant":          VARIANT_HEADER_ALIASES,
+    "cc":               CC_HEADER_ALIASES,
+    "cc_range":         CC_RANGE_HEADER_ALIASES,
+    "fuel_type":        FUEL_TYPE_HEADER_ALIASES,
+    "rto_location":     RTO_HEADER_ALIASES,
+    "insured_company":  INSURED_COMPANY_HEADER_ALIASES,
+    "ncb_percent":      ["ncb", "no claim bonus", "ncb %", "ncb percent",
+                         "earned ncb", "earned ncb %"],
+    "tariff_rate":      TARIFF_RATE_HEADER_ALIASES,
+    "yom":              YOM_HEADER_ALIASES,
+    "sr_no":            SR_NO_HEADER_ALIASES,
+}
+
 # Flattened alias list used by auto_header_detect
 ALL_HEADER_ALIASES = [
     a.lower() for a in (
         VEHICLE_HEADER_ALIASES + EXPIRY_HEADER_ALIASES + CLAIM_HEADER_ALIASES
+        + MAKE_HEADER_ALIASES + MODEL_HEADER_ALIASES + VARIANT_HEADER_ALIASES
+        + CC_HEADER_ALIASES + CC_RANGE_HEADER_ALIASES + FUEL_TYPE_HEADER_ALIASES
+        + RTO_HEADER_ALIASES + INSURED_COMPANY_HEADER_ALIASES
+        + TARIFF_RATE_HEADER_ALIASES + YOM_HEADER_ALIASES + SR_NO_HEADER_ALIASES
     )
 ]
 

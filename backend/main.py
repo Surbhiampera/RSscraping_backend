@@ -13,6 +13,17 @@ from sqlalchemy import text
 # ✅ Create DB tables (only for development)
 Base.metadata.create_all(bind=engine)
 
+# ✅ Additive column migration — add input_data to scrape_run_inputs if missing
+with engine.connect() as _conn:
+    try:
+        _conn.execute(text(
+            "ALTER TABLE scrape_run_inputs "
+            "ADD COLUMN IF NOT EXISTS input_data TEXT"
+        ))
+        _conn.commit()
+    except Exception:
+        pass
+
 
 
 app = FastAPI(

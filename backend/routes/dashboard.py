@@ -1,13 +1,25 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, cast, String as SAString
 
 from backend.db.session import get_db
-from backend.db.models import ScrapeRun, CarInfo, StatusEnum, User
+from backend.db.models import ScrapeRun, ScrapeRunInput, StatusEnum, User
 from backend.core.dependencies import get_current_user, require_admin
 from backend.schemas.common import APIResponse
 
 router = APIRouter()
+
+# Status values written by the Celery pipeline (raw strings, bypassing ORM enum)
+# and by the ORM path (StatusEnum values).
+_SUCCESS_STATUSES = ("SUCCESS", "PASS")
+_FAILURE_STATUSES = ("FAIL", "FAILURE")
+_PENDING_STATUSES = ("PENDING", "pending")
+_PROCESSING_STATUSES = ("PROCESSING", "processing")
+
+
+def _status_in(column, values: tuple):
+    """Case-insensitive status filter that works with both enum and varchar columns."""
+    return cast(column, SAString).in_(values)
 
 
 @router.get("", response_model=APIResponse)
@@ -16,19 +28,45 @@ def dashboard_overview(
     current_user: User = Depends(get_current_user),
 ):
     """Aggregated dashboard metrics for the current user."""
-    total_uploaded_cars = db.query(func.count(CarInfo.id)).scalar() or 0
-    scraped_successfully = db.query(func.count(CarInfo.id)).filter(CarInfo.status == StatusEnum.PASS_).scalar() or 0
-    total_failed = db.query(func.count(CarInfo.id)).filter(CarInfo.status == StatusEnum.FAIL).scalar() or 0
-    total_pending = db.query(func.count(CarInfo.id)).filter(CarInfo.status == StatusEnum.PENDING).scalar() or 0
+
+    # Total cars = total ScrapeRunInput rows (one per uploaded car)
+    total_uploaded_cars = db.query(func.count(ScrapeRunInput.id)).scalar() or 0
+
+    # Scraped successfully / failed / pending — read from ScrapeRun.status
+    # The Celery pipeline writes "SUCCESS"/"FAILURE"; the ORM writes "PASS"/"FAIL".
+    scraped_successfully = db.query(func.count(ScrapeRun.run_id)).filter(
+        _status_in(ScrapeRun.status, _SUCCESS_STATUSES)
+    ).scalar() or 0
+
+    total_failed = db.query(func.count(ScrapeRun.run_id)).filter(
+        _status_in(ScrapeRun.status, _FAILURE_STATUSES)
+    ).scalar() or 0
+
+    total_pending = db.query(func.count(ScrapeRun.run_id)).filter(
+        _status_in(ScrapeRun.status, _PENDING_STATUSES + _PROCESSING_STATUSES)
+    ).scalar() or 0
+
     total_batches = db.query(func.count(ScrapeRun.run_id)).scalar() or 0
 
-    # User-specific
-    my_run_ids = [r.run_id for r in db.query(ScrapeRun.run_id).filter(ScrapeRun.user_id == current_user.id).all()]
+    # User-specific counts
+    my_runs = db.query(ScrapeRun).filter(ScrapeRun.user_id == current_user.id).all()
+    my_run_ids = [r.run_id for r in my_runs]
     my_upload_count = len(my_run_ids)
+
     if my_run_ids:
-        my_total_cars = db.query(func.count(CarInfo.id)).filter(CarInfo.run_id.in_(my_run_ids)).scalar() or 0
-        my_success = db.query(func.count(CarInfo.id)).filter(CarInfo.run_id.in_(my_run_ids), CarInfo.status == StatusEnum.PASS_).scalar() or 0
-        my_failed = db.query(func.count(CarInfo.id)).filter(CarInfo.run_id.in_(my_run_ids), CarInfo.status == StatusEnum.FAIL).scalar() or 0
+        my_total_cars = db.query(func.count(ScrapeRunInput.id)).filter(
+            ScrapeRunInput.run_id.in_(my_run_ids)
+        ).scalar() or 0
+
+        my_success = db.query(func.count(ScrapeRun.run_id)).filter(
+            ScrapeRun.run_id.in_(my_run_ids),
+            _status_in(ScrapeRun.status, _SUCCESS_STATUSES),
+        ).scalar() or 0
+
+        my_failed = db.query(func.count(ScrapeRun.run_id)).filter(
+            ScrapeRun.run_id.in_(my_run_ids),
+            _status_in(ScrapeRun.status, _FAILURE_STATUSES),
+        ).scalar() or 0
     else:
         my_total_cars = my_success = my_failed = 0
 
@@ -56,11 +94,8 @@ def total_uploaded_vehicles(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Returns total number of vehicle records uploaded in the system.
-    """
-    total = db.query(func.count(CarInfo.id)).scalar()
-
+    """Returns total number of vehicle inputs uploaded in the system."""
+    total = db.query(func.count(ScrapeRunInput.id)).scalar() or 0
     return APIResponse(data={"total_uploaded_vehicles": total})
 
 
@@ -72,13 +107,10 @@ def scraped_successfully(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Returns number of vehicles successfully scraped.
-    """
-    total = db.query(func.count(CarInfo.id)).filter(
-        CarInfo.status == StatusEnum.PASS_
-    ).scalar()
-
+    """Returns number of scrape runs that completed successfully."""
+    total = db.query(func.count(ScrapeRun.run_id)).filter(
+        _status_in(ScrapeRun.status, _SUCCESS_STATUSES)
+    ).scalar() or 0
     return APIResponse(data={"scraped_successfully": total})
 
 
@@ -90,13 +122,10 @@ def total_failed(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Returns number of vehicle scrape failures.
-    """
-    total = db.query(func.count(CarInfo.id)).filter(
-        CarInfo.status == StatusEnum.FAIL
-    ).scalar()
-
+    """Returns number of scrape runs that failed."""
+    total = db.query(func.count(ScrapeRun.run_id)).filter(
+        _status_in(ScrapeRun.status, _FAILURE_STATUSES)
+    ).scalar() or 0
     return APIResponse(data={"total_failed": total})
 
 
@@ -108,13 +137,10 @@ def total_pending(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Returns number of vehicles waiting to be processed.
-    """
-    total = db.query(func.count(CarInfo.id)).filter(
-        CarInfo.status == StatusEnum.PENDING
-    ).scalar()
-
+    """Returns number of scrape runs waiting to be processed."""
+    total = db.query(func.count(ScrapeRun.run_id)).filter(
+        _status_in(ScrapeRun.status, _PENDING_STATUSES + _PROCESSING_STATUSES)
+    ).scalar() or 0
     return APIResponse(data={"total_pending": total})
 
 

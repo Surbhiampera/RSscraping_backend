@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from uuid import UUID
 from typing import Optional, List
 import io
+import re
 
 from backend.db.session import get_db
 from backend.db.models import CarInfo, ScrapeRun, QuotesDetail, FinalData, FinalFlatOutput, StatusEnum, User
@@ -166,6 +167,23 @@ def get_results(
         )
     )
 
+@router.get("/available-dates", response_model=APIResponse)
+def get_available_dates(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return distinct YYYY-MM-DD strings that have scraped results."""
+    from sqlalchemy import cast, func
+    from sqlalchemy import Date as SADate
+
+    rows = (
+        db.query(func.distinct(cast(FinalFlatOutput.created_at, SADate)))
+        .order_by(cast(FinalFlatOutput.created_at, SADate).desc())
+        .all()
+    )
+    return APIResponse(data=[str(r[0]) for r in rows if r[0]])
+
+
 @router.post("/export")
 def export_results(
     body: ExportRequest,
@@ -181,6 +199,7 @@ def export_results(
         raise HTTPException(status_code=404, detail="No data to export")
 
     fmt = body.format.value if hasattr(body.format, "value") else str(body.format)
+    idv_type = body.idv_type or None
 
     if fmt == "csv":
         content = export_to_csv(rows)
@@ -197,12 +216,60 @@ def export_results(
             headers={"Content-Disposition": "attachment; filename=results.json"},
         )
     else:
-        content = export_to_excel(rows)
+        fname = f"results_{idv_type}.xlsx" if idv_type else "results.xlsx"
+        content = export_to_excel(rows, idv_type=idv_type)
         return StreamingResponse(
             io.BytesIO(content),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": "attachment; filename=results.xlsx"},
+            headers={"Content-Disposition": f"attachment; filename={fname}"},
         )
+
+
+@router.get("/export/by-date")
+def export_by_date(
+    date: str = Query(..., description="Date in YYYY-MM-DD format"),
+    idv_type: str = Query(..., description="'default' or 'median'"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Export all records scraped on a specific date, filtered by IDV type."""
+    from backend.services.export_service import export_to_excel
+    from datetime import datetime
+    from sqlalchemy import func, cast
+    from sqlalchemy import Date as SADate
+
+    try:
+        target_date = datetime.strptime(date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    db_rows = db.query(FinalFlatOutput).filter(
+        cast(FinalFlatOutput.created_at, SADate) == target_date
+    ).all()
+
+    all_plans: list = []
+    for r in db_rows:
+        items = r.flat_output if isinstance(r.flat_output, list) else [r.flat_output]
+        all_plans.extend(items)
+
+    if not all_plans:
+        raise HTTPException(status_code=404, detail=f"No data found for {date}")
+
+    filtered = [
+        p for p in all_plans
+        if str(p.get("IDV Type", "")).strip().lower() == idv_type.lower()
+    ]
+
+    if not filtered:
+        raise HTTPException(status_code=404, detail=f"No {idv_type} IDV data for {date}")
+
+    fname = f"{date}_{idv_type}.xlsx"
+    content = export_to_excel(filtered, idv_type=idv_type)
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={fname}"},
+    )
 
 
 @router.get("/export/{ffo_id}")
@@ -210,10 +277,11 @@ def export_single_car(
     ffo_id: UUID,
     car_key: str = Query(..., description="Car identity key for filtering"),
     format: str = Query("xlsx"),
+    idv_type: Optional[str] = Query(None, description="'default' or 'median'"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Download all insurer plan details for a single car."""
+    """Download insurer plan details for a single car, optionally filtered by IDV type."""
     from backend.services.export_service import export_to_excel
 
     ffo = db.query(FinalFlatOutput).filter(FinalFlatOutput.id == ffo_id).first()
@@ -221,12 +289,29 @@ def export_single_car(
         raise HTTPException(status_code=404, detail="Record not found")
 
     items = ffo.flat_output if isinstance(ffo.flat_output, list) else [ffo.flat_output]
+
+    # Filter by car identity
     rows = [p for p in items if _car_identity(p) == car_key] if car_key else items
+
+    # Further filter by IDV type when requested
+    if idv_type:
+        rows = [
+            p for p in rows
+            if str(p.get("IDV Type", "")).strip().lower() == idv_type.lower()
+        ]
 
     if not rows:
         raise HTTPException(status_code=404, detail="No data found for this car")
 
-    fname = f"car_{rows[0].get('Make', '')}_{rows[0].get('Model', '')}"
+    first = rows[0]
+    rto = (first.get("Rto Number") or first.get("Rto Location") or "").strip()
+    make = (first.get("Make") or "").strip()
+    model = (first.get("Model") or "").strip()
+    ncb = str(first.get("NCB %") or "").strip()
+    raw_fname = f"{rto}_{make}_{model}_{ncb}"
+    base_fname = re.sub(r"[^\w%\-]", "_", raw_fname).strip("_") or "record"
+    # Append idv_type suffix to match pipeline naming: _default / _median
+    fname = f"{base_fname}_{idv_type}" if idv_type else base_fname
 
     if format == "csv":
         content = export_to_csv(rows)
@@ -243,7 +328,7 @@ def export_single_car(
             headers={"Content-Disposition": f"attachment; filename={fname}.json"},
         )
     else:
-        content = export_to_excel(rows)
+        content = export_to_excel(rows, idv_type=idv_type)
         return StreamingResponse(
             io.BytesIO(content),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
