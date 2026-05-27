@@ -72,6 +72,7 @@ from .quality import run_quality_check, run_cross_column_quality_check
 
 UPLOAD_MODE_WITH_REG    = "with_reg"      # bulk file — has registration numbers
 UPLOAD_MODE_WITHOUT_REG = "without_reg"   # bulk file — structured fields only
+UPLOAD_MODE_AUTO        = "auto"          # bulk file — mixed: some rows with reg, some without
 
 # No-reg required fields (Make + Model + RTO must be present for a row to be valid)
 NO_REG_REQUIRED_FIELDS = {"make", "model", "rto_location"}
@@ -184,6 +185,64 @@ def _build_no_reg_preview_rows(df: pd.DataFrame, col_map: dict) -> list:
             "error":      None if is_valid else "Missing required: Make, Model, RTO Location",
             "input_data": input_data,
         })
+    return rows
+
+
+# ----------------------------------
+# Mixed Preview Row Builder
+# Handles files where some rows have valid registration numbers
+# and others only have structured fields (Make/Model/RTO).
+# ----------------------------------
+
+def _build_mixed_preview_rows(df: pd.DataFrame, vehicle_col: str | None, col_map: dict) -> list:
+    """
+    Per-row detection: for each row check if a valid vehicle registration exists.
+    If yes → with_reg row (input_data=None).
+    If no  → check structured cols; if Make+Model+RTO present → without_reg row.
+    Otherwise → invalid row.
+    """
+    veh_values = None
+    if vehicle_col and vehicle_col in df.columns:
+        veh_values = df[vehicle_col].astype(str).str.strip().tolist()
+
+    col_arrays: dict = {
+        field: df[col].tolist()
+        for field, col in col_map.items()
+        if col in df.columns
+    }
+
+    rows = []
+    for i in range(len(df)):
+        raw_reg = veh_values[i] if veh_values else ""
+        cleaned = clean_car_number(raw_reg)
+
+        if validate_car_number(cleaned):
+            rows.append({"car_number": cleaned, "is_valid": True, "error": None, "input_data": None})
+            continue
+
+        input_data: dict = {}
+        for field, values in col_arrays.items():
+            raw = values[i]
+            val = str(raw).strip() if pd.notna(raw) else ""
+            if val and val.lower() not in ("nan", "none", ""):
+                input_data[field] = val
+
+        make  = input_data.get("make",         "")
+        model = input_data.get("model",        "")
+        rto   = input_data.get("rto_location", "")
+        yom   = input_data.get("yom",          "")
+
+        if make and model and rto:
+            label = " | ".join(p for p in [make, model, rto, yom] if p)
+            rows.append({"car_number": label, "is_valid": True, "error": None, "input_data": input_data})
+        else:
+            rows.append({
+                "car_number": raw_reg.strip() or f"Row {i + 1}",
+                "is_valid":   False,
+                "error":      "No valid vehicle number or Make/Model/RTO found",
+                "input_data": None,
+            })
+
     return rows
 
 
@@ -420,6 +479,7 @@ def parse_upload(file_content: bytes, filename: str) -> dict:
     quality              = run_quality_check(df, schema)
     cross_column_quality = run_cross_column_quality_check(df, schema)
 
+    # detect_upload_type uses value-based vehicle_pattern_ratio as the primary signal
     upload_mode = detect_upload_type(df)
     field_stats = {}
 
@@ -454,7 +514,25 @@ def parse_upload(file_content: bytes, filename: str) -> dict:
                 vehicle_col = info["column"]
                 break
 
-        preview      = _build_preview_rows(df, vehicle_col)
+        # Check if structured columns (Make/Model/RTO) are also present.
+        # If so, use per-row mixed detection so rows without a valid reg number
+        # can fall back to the without_reg flow instead of being marked invalid.
+        col_map        = _detect_no_reg_column_map(df)
+        has_structured = bool(col_map.get("make") and col_map.get("model") and col_map.get("rto_location"))
+
+        if has_structured:
+            preview      = _build_mixed_preview_rows(df, vehicle_col, col_map)
+            valid_valid  = [r for r in preview if r["is_valid"]]
+            if not valid_valid or all(r.get("input_data") is None for r in valid_valid):
+                upload_mode = UPLOAD_MODE_WITH_REG
+            elif all(r.get("input_data") is not None for r in valid_valid):
+                upload_mode = UPLOAD_MODE_WITHOUT_REG
+            else:
+                upload_mode = UPLOAD_MODE_AUTO
+        else:
+            preview     = _build_preview_rows(df, vehicle_col)
+            col_map     = {}  # pure with_reg: no structured cols
+
         valid_rows   = sum(1 for r in preview if r["is_valid"])
         invalid_rows = len(preview) - valid_rows
 
@@ -489,8 +567,6 @@ def parse_upload(file_content: bytes, filename: str) -> dict:
                 stats["binary_ratio"] = round(binary_ratio(series, CLAIM_VALID_VALUES), 4)
 
             field_stats[field_name] = stats
-
-        col_map = {}
 
     return {
         "header_present":       header_present,

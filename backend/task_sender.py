@@ -17,6 +17,7 @@ from typing import List, Optional, Dict, Any
 
 from celery.result import AsyncResult
 from backend.celery_worker import celery_app
+from backend.services.azure_queue import push_scrape_task
 
 # ── Logging ────────────────────────────────────────────────────────────────
 
@@ -33,33 +34,52 @@ logger = logging.getLogger(__name__)
 
 def send_scrape_row(run_id: str, inp) -> Optional[str]:
     """
-    Send a single DB row as a Celery task.
+    Send a single DB row as a Celery task AND push to the Azure Redis queue.
 
     Args:
         run_id: ScrapeRun ID
-        inp:    ScrapeRunInput ORM object
+        inp:    ScrapeRunInput ORM object (with_reg OR without_reg — inferred from input_data)
 
     Returns:
         task_id (str) or None
     """
+    car_number    = inp.car_number
+    cust_name     = getattr(inp, "customer_name", None)
+    phone         = getattr(inp, "phone", None)
+    policy_expiry = getattr(inp, "policy_expiry", None)
+    claim_status  = getattr(inp, "claim_status", None)
+    input_data    = getattr(inp, "input_data", None)   # None → with_reg, str → without_reg
+
+    # ── 1. Push to Azure Redis queue (direct JSON list) ──────────────────────
+    push_scrape_task(
+        run_id=run_id,
+        car_number=car_number,
+        input_data=input_data,
+        cust_name=cust_name,
+        phone=phone,
+        policy_expiry=policy_expiry,
+        claim_status=claim_status,
+    )
+
+    # ── 2. Send Celery task (existing worker picks this up) ───────────────────
     try:
         result = celery_app.send_task(
             "scrape_car",
             kwargs=dict(
-                car_number=inp.car_number,
+                car_number=car_number,
                 run_id=run_id,
-                cust_name=getattr(inp, "customer_name", None),
-                phone=getattr(inp, "phone", None),
-                policy_expiry=getattr(inp, "policy_expiry", None),
-                claim_status=getattr(inp, "claim_status", None),
+                cust_name=cust_name,
+                phone=phone,
+                policy_expiry=policy_expiry,
+                claim_status=claim_status,
             ),
         )
 
-        logger.info(f"📤 Sent scrape_car → {inp.car_number} | task_id={result.id}")
+        logger.info(f"📤 Sent scrape_car → {car_number} | task_id={result.id}")
         return result.id
 
     except Exception as e:
-        logger.error(f"❌ Failed for {inp.car_number}: {e}")
+        logger.error(f"❌ Celery dispatch failed for {car_number}: {e}")
         return None
 
 

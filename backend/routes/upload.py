@@ -63,6 +63,8 @@ def _build_scrape_run_rows(
     Convert parsed preview rows into (scrape_run_dicts, scrape_run_input_dicts, run_ids).
     Pre-generates UUIDs so all inserts can be batched without per-row flushes.
     Scales to any number of rows.
+    Per-row flow is inferred from input_data presence (None → with_reg, dict → without_reg)
+    so mixed-mode uploads ("auto") work without extra branching.
     """
     seen        = set()
     run_dicts   = []
@@ -70,21 +72,25 @@ def _build_scrape_run_rows(
     run_ids     = []
 
     for idx, row in enumerate(preview_rows):
-        if upload_mode == UPLOAD_MODE_WITH_REG:
-            car_number     = (row.get("car_number") or "").strip().upper()
-            input_data_str = None
-        else:
-            input_data     = row.get("input_data") or {}
+        row_input_data = row.get("input_data")  # None → with_reg, dict → without_reg
+
+        if row_input_data:
+            input_data     = row_input_data if isinstance(row_input_data, dict) else {}
             make_slug      = (input_data.get("make",  "") or "")[:8].replace(" ", "")
             model_slug     = (input_data.get("model", "") or "")[:8].replace(" ", "")
             car_number     = f"NOREG{idx:05d}_{make_slug}_{model_slug}"[:50]
             input_data_str = json.dumps(input_data)
+        else:
+            car_number     = (row.get("car_number") or "").strip().upper()
+            input_data_str = None
 
         if not car_number:
             continue
-        if upload_mode == UPLOAD_MODE_WITH_REG and car_number in seen:
+        # Deduplicate only registration-number rows
+        if row_input_data is None and car_number in seen:
             continue
-        seen.add(car_number)
+        if row_input_data is None:
+            seen.add(car_number)
 
         run_id = uuid.uuid4()
         run_dicts.append({

@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     # -------------------------
     REDIS_HOST: str = "localhost"
     REDIS_KEY: str = "defaultkey"
+    AZURE_QUEUE_NAME: str = "scrape_tasks"
 
     @property
     def REDIS_URL(self) -> str:

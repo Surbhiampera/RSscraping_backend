@@ -12,6 +12,7 @@ from .main import (
     # Mode constants
     UPLOAD_MODE_WITH_REG,
     UPLOAD_MODE_WITHOUT_REG,
+    UPLOAD_MODE_AUTO,
     NO_REG_REQUIRED_FIELDS,
 
     # Validation helpers
