@@ -5,6 +5,7 @@ Automatically saves scraped responses to PostgreSQL on completion
 
 import asyncio
 import logging
+import time
 import psycopg2
 import json
 import os
@@ -15,7 +16,8 @@ from typing import Optional
 from celery import Celery, Task
 from celery.exceptions import SoftTimeLimitExceeded
 
-from task_queue.config import (
+from backend.celery.task_queue.config import (
+    REDIS_URL,
     CELERY_BROKER_URL,
     CELERY_RESULT_BACKEND,
     CELERY_TASK_TIME_LIMIT,
@@ -26,9 +28,7 @@ from task_queue.config import (
     LOG_LEVEL,
 )
 
-# Database sync imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from db_and_logging.db_live_sync import LiveDBSync
+from backend.celery.db_and_logging.db_live_sync import LiveDBSync
 
 # ============================================================================
 # CELERY APP
@@ -235,7 +235,6 @@ def scrape_car(
 
     
     try:
-        import time
         start_time = time.time()
         
         # Add paths
@@ -264,9 +263,6 @@ def scrape_car(
             meta={'current': 0, 'total': 100, 'message': 'Starting browser...'}
         )
 
-        print( f"Phone type: {type(phone)}" )
-        print( f"Phone value: {phone}" )
-        
         asyncio.run(
             run_scraper(
                 run_id=run_id,
@@ -298,6 +294,7 @@ def scrape_car(
         
         total_duration_ms = int((time.time() - start_time) * 1000)
         db_sync.finalize_run(
+            run_id=run_id,
             status="SUCCESS",
             total_duration_ms=total_duration_ms,
             notes=f"Car: {car_number} | Phone: {phone or 'N/A'}"

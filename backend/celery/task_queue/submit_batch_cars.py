@@ -6,7 +6,7 @@ Architecture: Client → Celery → Redis Queue → Workers → pb_flow.py → D
 
 import logging
 from datetime import datetime
-from task_queue.client import submit_task
+from backend.celery.task_queue.client import submit_task
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

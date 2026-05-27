@@ -9,8 +9,10 @@ from rapidfuzz import fuzz
 # ----------------------------------
 
 VALID_STATE_CODES = {
-    "TN", "KA", "MH", "DL", "AP", "TS", "KL", "GJ",
-    "RJ", "UP", "MP", "WB", "HR", "PB", "OD", "BR"
+    "AN", "AP", "AR", "AS", "BR", "CG", "CH", "DD", "DL",
+    "GA", "GJ", "HP", "HR", "JH", "JK", "KA", "KL", "LA",
+    "MH", "ML", "MN", "MP", "MZ", "NL", "OD", "OR", "PB",
+    "PY", "RJ", "SK", "TN", "TR", "TS", "UK", "UP", "WB",
 }
 
 VEHICLE_HEADER_ALIASES = [
@@ -233,7 +235,7 @@ def header_match_score(column_name, aliases):
 # Vehicle Pattern Helpers
 # ----------------------------------
 
-VEHICLE_REGEX = re.compile(r'^[A-Z]{2}\d{1,2}[A-Z]{0,2}\d{4}$')
+VEHICLE_REGEX = re.compile(r'^[A-Z]{2}\d{1,2}[A-Z]{0,3}\d{1,4}$')
 
 
 def matches_vehicle_pattern(value):

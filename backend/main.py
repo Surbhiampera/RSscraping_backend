@@ -10,19 +10,22 @@ from backend.routes import history, quotes, activity, usage, profile, insights
 from backend.db.session import Base, engine
 from sqlalchemy import text
 
-# ✅ Create DB tables (only for development)
-Base.metadata.create_all(bind=engine)
-
-# ✅ Additive column migration — add input_data to scrape_run_inputs if missing
-with engine.connect() as _conn:
-    try:
-        _conn.execute(text(
-            "ALTER TABLE scrape_run_inputs "
-            "ADD COLUMN IF NOT EXISTS input_data TEXT"
-        ))
+try:
+    Base.metadata.create_all(bind=engine)
+    with engine.connect() as _conn:
+        migrations = [
+            "ALTER TABLE scrape_run_inputs ADD COLUMN IF NOT EXISTS input_data TEXT",
+            "ALTER TABLE car_info ADD COLUMN IF NOT EXISTS status statusenum DEFAULT 'PENDING'",
+            "ALTER TABLE car_info ADD COLUMN IF NOT EXISTS error_message TEXT",
+        ]
+        for sql in migrations:
+            try:
+                _conn.execute(text(sql))
+            except Exception:
+                pass
         _conn.commit()
-    except Exception:
-        pass
+except Exception:
+    pass
 
 
 

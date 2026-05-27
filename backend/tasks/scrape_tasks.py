@@ -1,31 +1,12 @@
-from celery import shared_task
+# The real scrape_car task is registered in backend/celery/task_queue/tasks.py.
+# That module is loaded by celery_worker.py and is the single source of truth
+# for the "scrape_car" task name on the Celery worker.
+#
+# Do NOT register another task with name="scrape_car" here — duplicate
+# registrations cause the worker to pick up whichever was imported last,
+# silently overriding the real implementation.
+#
+# To call the task from Python code, use task_sender.send_scrape_row() or
+# task_sender.send_scrape_car() which call celery_app.send_task("scrape_car").
 
-
-@shared_task(name="scrape_car", bind=True)
-def scrape_car(self, car_number: str, run_id: str, **kwargs):
-    """
-    Celery worker task — processes ONE car
-
-    Args:
-        car_number: vehicle number
-        run_id: scrape run id
-        kwargs: optional fields (phone, cust_name, etc.)
-    """
-
-    print(f"🚗 Processing car: {car_number} | run: {run_id}")
-
-    try:
-        # 🔹 Your scraping logic here
-        # Example:
-        # result = scrape_insurance(car_number)
-
-        print(f"✅ Done: {car_number}")
-
-        return {
-            "car_number": car_number,
-            "status": "success",
-        }
-
-    except Exception as e:
-        print(f"❌ Error for {car_number}: {str(e)}")
-        raise e
+from backend.celery.task_queue.tasks import scrape_car  # noqa: F401  (re-export for convenience)

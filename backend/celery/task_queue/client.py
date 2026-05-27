@@ -3,11 +3,13 @@
 Celery Task Client - Submit and monitor scraping tasks
 """
 
+import os
 import sys
+import time
 import logging
 from typing import List, Optional
 from celery.result import AsyncResult
-from task_queue.tasks import app, scrape_car, health_check
+from backend.celery.task_queue.tasks import app, scrape_car, health_check
 
 logging.basicConfig(
     level=logging.INFO,

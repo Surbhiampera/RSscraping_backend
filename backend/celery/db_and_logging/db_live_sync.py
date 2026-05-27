@@ -165,7 +165,7 @@ class LiveDBSync:
     # -------------------------
     # FINALIZE RUN
     # -------------------------
-    def finalize_run(self, status: str, total_duration_ms: int = None, notes: str = None):
+    def finalize_run(self, status: str, total_duration_ms: int = None, notes: str = None, run_id: str = None):
         """Finalize scrape run record in database"""
         create_scrape_run(
             conn=self.conn,

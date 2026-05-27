@@ -43,3 +43,8 @@ pydantic
 pydantic-settings
 python-dotenv
 loguru
+
+# ================================
+# Governance / Telemetry
+# ================================
+governance-logger==1.0.0
