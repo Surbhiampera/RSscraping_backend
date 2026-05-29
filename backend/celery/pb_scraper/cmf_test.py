@@ -278,6 +278,10 @@ async def run(
             quotes_page_url = page.url
             print(f"\n Quotes Page URL captured: {quotes_page_url[:80]}...")
 
+            log.step_start("STEP_12_QUOTES_URL_CAPTURED", "Quotes page URL captured")
+            log.step_success("STEP_12_QUOTES_URL_CAPTURED", quotes_url=quotes_page_url)
+            dbsync.push_latest_step(log)
+
             # STEP 13.5: Open Independent Mobile Tab IMMEDIATELY AFTER STEP 12
             print("\n" + "=" * 70)
             print(" OPENING INDEPENDENT MOBILE TAB (STEP 13.5)")

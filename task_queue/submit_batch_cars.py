@@ -1,112 +1,121 @@
 #!/usr/bin/env python
 """
-Submit 4 car scraping tasks to Celery queue for parallel processing
-Architecture: Client → Celery → Redis Queue → Workers → pb_flow.py → DB
+Submit car scraping tasks to Celery queue for parallel processing
+Architecture: Client → Celery → Redis Queue → Workers → cmf_locator_v2.py → DB
 """
 
+import sys
+from pathlib import Path
 import logging
-from datetime import datetime
-from task_queue.client import submit_task
+from typing import Optional
+import uuid
 
-logging.basicConfig(level=logging.INFO)
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from celery.result import AsyncResult
+from task_queue.task import app, scrape_car
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
-# ============================================================================
-# CARS TO SCRAPE
-# ============================================================================
-CARS_TO_SCRAPE = [
-    "MH12VZ2302",
-    "MH49BB1307",
-    "MH12SE5466",
-    "MH04KW1827",
-]
+# ── Test car ──────────────────────────────────────────────────────────────────
+TEST_CAR_BRAND = "Maruti"
+TEST_CAR_MODEL = "Alto"
+TEST_FUEL_TYPE = "Petrol"
+TEST_VARIANT   = "LXI"
+TEST_YEAR      = "2018"
+TEST_RTO_CODE  = "TS11"
+# ─────────────────────────────────────────────────────────────────────────────
 
 
-def submit_batch_cars():
-    """Submit 4 car scraping tasks to Celery queue"""
-    
-    print("\n" + "="*80)
-    print("🚀 SUBMITTING 4-CAR BATCH TO CELERY QUEUE")
-    print("="*80)
-    print(f"📋 Cars: {', '.join(CARS_TO_SCRAPE)}")
-    print(f"⏰ Submitted at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("="*80 + "\n")
-    
-    submitted_tasks = []
-    task_ids = []
-    
-    for car_number in CARS_TO_SCRAPE:
-        print(f"\n📤 Submitting: {car_number}")
-        
-        try:
-            task_id = submit_task(
-                car_number=car_number,
-                phone=None,
-                cust_name=None,
-                policy_expiry="Policy not expired yet",
-                claim_status="Not Sure",
-            )
-            
-            if task_id:
-                submitted_tasks.append({"status": "SUBMITTED", "task_id": task_id, "car": car_number})
-                task_ids.append(task_id)
-                print(f"   ✅ Task ID: {task_id}")
-            else:
-                submitted_tasks.append({"status": "FAILED", "car": car_number})
-                print(f"   ❌ Failed to submit")
-        
-        except Exception as e:
-            logger.error(f"❌ Error: {e}")
-            submitted_tasks.append({"status": "FAILED", "car": car_number, "error": str(e)})
-    
-    # =========================================================================
-    # SUMMARY
-    # =========================================================================
-    successful = sum(1 for t in submitted_tasks if t['status'] == 'SUBMITTED')
-    failed = sum(1 for t in submitted_tasks if t['status'] != 'SUBMITTED')
-    
-    print("\n" + "="*80)
-    print("📊 BATCH SUBMISSION SUMMARY")
-    print("="*80)
-    print(f"Total: {len(CARS_TO_SCRAPE)}")
-    print(f"✅ Successful: {successful}")
-    print(f"❌ Failed: {failed}")
-    print("="*80 + "\n")
-    
-    # =========================================================================
-    # TASK IDs
-    # =========================================================================
-    if task_ids:
-        print("📌 Task IDs for monitoring:\n")
-        for car, task_id in zip(CARS_TO_SCRAPE, task_ids):
-            print(f"   {car:15} → {task_id}")
-    
-    print("\n" + "="*80)
-    print("⏭️  NEXT STEPS")
-    print("="*80)
-    print(f"""
-1️⃣  Monitor tasks:
-   python -m task_queue.client check {' '.join(task_ids[:2])}...
+def send_task(
+    car_brand: str,
+    car_model: str,
+    fuel_type: str,
+    variant: str,
+    year: str,
+    rto_code: str,
+    cust_name: Optional[str] = None,
+    phone: Optional[str] = None,
+    policy_expiry: Optional[str] = None,
+    claim_status: Optional[str] = None,
+) -> Optional[str]:
+    """Send a single scrape task to the Celery queue."""
+    try:
+        run_id = str(uuid.uuid4())
+        label = f"{car_brand} {car_model} {variant} ({rto_code})"
+        logger.info(f"Sending: {label}")
+        result = scrape_car.delay(
+            run_id=run_id,
+            car_brand=car_brand,
+            car_model=car_model,
+            fuel_type=fuel_type,
+            variant=variant,
+            year=year,
+            rto_code=rto_code,
+            cust_name=cust_name,
+            phone=phone,
+            policy_expiry=policy_expiry,
+            claim_status=claim_status,
+        )
+        task_id = result.id
+        logger.info(f"Task sent — run_id={run_id} | task_id={task_id}")
+        return task_id
+    except Exception as e:
+        logger.exception(f"Error sending task: {e}")
+        return None
 
-2️⃣  Check database:
-   SELECT * FROM scrape_runs WHERE created_at > NOW() - INTERVAL '1 hour'
 
-3️⃣  View data:
-   ls policy_bazaar_responses_validation/
-""")
-    print("="*80 + "\n")
-    
-    return submitted_tasks, task_ids
+def get_task_status(task_id: str) -> dict:
+    """Get task status from Redis."""
+    result = AsyncResult(task_id, app=app)
+    return {
+        "task_id": task_id,
+        "state": result.state,
+        "ready": result.ready(),
+        "successful": result.successful() if result.ready() else None,
+        "result": result.result if result.ready() else None,
+    }
+
+
+def main():
+    """CLI interface"""
+    if len(sys.argv) < 2:
+        print("Usage:")
+        print("  python submit_batch_cars.py test")
+        print("  python submit_batch_cars.py status TASK_ID")
+        sys.exit(1)
+
+    cmd = sys.argv[1]
+
+    if cmd == "test":
+        task_id = send_task(
+            car_brand=TEST_CAR_BRAND,
+            car_model=TEST_CAR_MODEL,
+            fuel_type=TEST_FUEL_TYPE,
+            variant=TEST_VARIANT,
+            year=TEST_YEAR,
+            rto_code=TEST_RTO_CODE,
+            policy_expiry="Policy not expired yet",
+            claim_status="Not Sure",
+        )
+        if task_id:
+            print(f"\nTask submitted: {task_id}")
+
+    elif cmd == "status" and len(sys.argv) > 2:
+        status = get_task_status(sys.argv[2])
+        print(f"\nTask:   {status['task_id']}")
+        print(f"State:  {status['state']}")
+        if status['result']:
+            print(f"Result: {status['result']}")
+
+    else:
+        print(f"Unknown command: {cmd}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    try:
-        tasks, ids = submit_batch_cars()
-        if ids:
-            print(f"✅ Submitted {len(ids)} tasks")
-        else:
-            print("⚠️  No tasks were submitted")
-    except KeyboardInterrupt:
-        print("\n⚠️  Cancelled")
-    except Exception as e:
-        logger.error(f"Fatal error: {e}", exc_info=True)
+    main()

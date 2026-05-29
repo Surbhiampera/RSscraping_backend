@@ -10,6 +10,7 @@ import psycopg2
 import json
 import os
 import sys
+import ssl
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
@@ -39,6 +40,8 @@ app = Celery(
     backend=CELERY_RESULT_BACKEND,
 )
 
+_ssl_opts = {"ssl_cert_reqs": ssl.CERT_NONE} if CELERY_BROKER_URL.startswith("rediss://") else {}
+
 app.conf.update(
     task_serializer="json",
     result_serializer="json",
@@ -49,6 +52,8 @@ app.conf.update(
     task_soft_time_limit=CELERY_TASK_SOFT_TIME_LIMIT,
     result_expires=24 * 60 * 60,
     task_track_started=True,
+    broker_use_ssl=_ssl_opts or None,
+    redis_backend_use_ssl=_ssl_opts or None,
 )
 
 # ============================================================================
@@ -207,55 +212,50 @@ class CallbackTask(Task):
 def scrape_car(
     self,
     run_id,
-    car_number: str,
+    car_brand: Optional[str] = None,
+    car_model: Optional[str] = None,
+    fuel_type: Optional[str] = None,
+    variant: Optional[str] = None,
+    year: Optional[str] = None,
+    rto_code: Optional[str] = None,
+    ncb_percent: Optional[str] = None,
     cust_name: Optional[str] = None,
     phone: Optional[str] = None,
     policy_expiry: Optional[str] = None,
     claim_status: Optional[str] = None,
     user_profile_dir: Optional[str] = None,
 ):
-    """
-    Scrape insurance quotes for a car and automatically save to database
-    
-    Args:
-        car_number: Car registration number
-        phone: Customer phone (optional)
-        cust_name: Customer name (optional)
-        policy_expiry: Policy expiry status (optional)
-        claim_status: Claim status (optional)
-    
-    Returns:
-        dict: Task result with DB insertion status
-    """
-    
+
+    car_label = f"{car_brand or ''} {car_model or ''} {variant or ''}".strip() or run_id
+
     logger.info(f"\n{'='*70}")
     logger.info(f" TASK STARTED: {run_id}")
-    logger.info(f" Car: {car_number}")
+    logger.info(f" Car: {car_label} | RTO: {rto_code} | Year: {year} | Fuel: {fuel_type}")
     logger.info(f"{'='*70}")
 
-    
+
     try:
         start_time = time.time()
-        
+
         # Add paths
         project_root = Path(__file__).parent.parent
         if str(project_root) not in sys.path:
             sys.path.insert(0, str(project_root))
-        
+
         pb_scripts_path = str(project_root / "pb_scraper")
         if pb_scripts_path not in sys.path:
             sys.path.insert(0, pb_scripts_path)
-        
+
         try:
             from pb_scraper.cmf_locator_v2 import run as run_scraper
         except ImportError:
             logger.error(f"❌ Could not import pb_flow from {pb_scripts_path}")
             raise
-        
+
         # Initialize DB sync
         conn = psycopg2.connect(**DB_CONFIG)
         db_sync = LiveDBSync(run_id, conn)
-        
+
         # Phase 1: Run scraper
         logger.info(f"\n[PHASE 1/3] 🌐 SCRAPING...")
         self.update_state(
@@ -266,57 +266,61 @@ def scrape_car(
         asyncio.run(
             run_scraper(
                 run_id=run_id,
-                car_number=car_number,
-                car_name="NEW_CAR",
+                car_brand=car_brand,
+                car_model=car_model,
+                fuel_type=fuel_type,
+                variant=variant,
+                year=year,
+                rto_code=rto_code,
                 cust_name=cust_name,
                 phone=phone,
                 policy_expiry=policy_expiry,
                 claim_status=claim_status,
-                user_profile_dir = user_profile_dir
+                user_profile_dir=user_profile_dir,
             )
         )
         logger.info(f"✓ Scraping completed")
-        
+
         # Phase 2: Save responses to database
         logger.info(f"\n[PHASE 2/3] 💾 SAVING TO DATABASE...")
         self.update_state(
             state='PROGRESS',
             meta={'current': 50, 'total': 100, 'message': 'Saving responses...'}
         )
-        
-        
+
+
         # Phase 3: Finalize run record
         logger.info(f"\n[PHASE 3/3] 📝 RECORDING RUN...")
         self.update_state(
             state='PROGRESS',
             meta={'current': 90, 'total': 100, 'message': 'Finalizing...'}
         )
-        
+
         total_duration_ms = int((time.time() - start_time) * 1000)
         db_sync.finalize_run(
             run_id=run_id,
             status="SUCCESS",
             total_duration_ms=total_duration_ms,
-            notes=f"Car: {car_number} | Phone: {phone or 'N/A'}"
+            notes=f"Car: {car_label} | Phone: {phone or 'N/A'}",
         )
-        
+
         result = {
             "status": "SUCCESS",
-            "car_number": car_number,
+            "car_label": car_label,
             "task_id": run_id,
             "duration_ms": total_duration_ms,
         }
-        
+
         logger.info(f"\n{'='*70}")
         logger.info(f"✅ TASK COMPLETED: {run_id}")
         logger.info(f"⏱️ Duration: {total_duration_ms}ms")
         logger.info(f"{'='*70}\n")
-        
+
         return result
-    
+
     except SoftTimeLimitExceeded:
-        logger.warning(f"⏱️  Soft timeout for {car_number}")
-        insert_scrape_run_to_db(run_id, car_number, "TIMEOUT", "Soft time limit exceeded")
+        logger.warning(f"⏱️  Soft timeout for {car_label}")
+        insert_scrape_run_to_db(run_id, car_label, "TIMEOUT", "Soft time limit exceeded")
         raise self.retry(countdown=CELERY_TASK_DEFAULT_RETRY_DELAY)
     
     except Exception as exc:

@@ -64,8 +64,9 @@ VARIANT_HEADER_ALIASES    = ["variant", "version", "trim", "car variant"]
 CC_HEADER_ALIASES         = ["cc", "cubic capacity", "engine cc", "displacement"]
 CC_RANGE_HEADER_ALIASES   = ["cc range", "engine range", "cc bucket", "displacement range"]
 FUEL_TYPE_HEADER_ALIASES  = ["fuel", "fuel type", "fuel kind", "propulsion"]
-RTO_HEADER_ALIASES        = ["rto", "location", "rto location", "rto/location", "rto code",
+RTO_HEADER_ALIASES        = ["rto", "location", "rto location", "rto/location",
                               "city", "rto no", "registration location"]
+RTO_CODE_HEADER_ALIASES   = ["rto code", "rto_code", "rto no.", "rto number"]
 INSURED_COMPANY_HEADER_ALIASES = ["insured company", "insurer", "company", "insurance company"]
 TARIFF_RATE_HEADER_ALIASES     = ["tariff rate", "tariff", "tariff %", "tariff_rate"]
 YOM_HEADER_ALIASES             = ["yom", "year of manufacture", "year", "manufacture year",
@@ -80,6 +81,7 @@ STRUCTURED_FIELD_ALIASES = {
     "cc":               CC_HEADER_ALIASES,
     "cc_range":         CC_RANGE_HEADER_ALIASES,
     "fuel_type":        FUEL_TYPE_HEADER_ALIASES,
+    "rto_code":         RTO_CODE_HEADER_ALIASES,
     "rto_location":     RTO_HEADER_ALIASES,
     "insured_company":  INSURED_COMPANY_HEADER_ALIASES,
     "ncb_percent":      ["ncb", "no claim bonus", "ncb %", "ncb percent",
@@ -95,7 +97,7 @@ ALL_HEADER_ALIASES = [
         VEHICLE_HEADER_ALIASES + EXPIRY_HEADER_ALIASES + CLAIM_HEADER_ALIASES
         + MAKE_HEADER_ALIASES + MODEL_HEADER_ALIASES + VARIANT_HEADER_ALIASES
         + CC_HEADER_ALIASES + CC_RANGE_HEADER_ALIASES + FUEL_TYPE_HEADER_ALIASES
-        + RTO_HEADER_ALIASES + INSURED_COMPANY_HEADER_ALIASES
+        + RTO_CODE_HEADER_ALIASES + RTO_HEADER_ALIASES + INSURED_COMPANY_HEADER_ALIASES
         + TARIFF_RATE_HEADER_ALIASES + YOM_HEADER_ALIASES + SR_NO_HEADER_ALIASES
     )
 ]
@@ -235,7 +237,7 @@ def header_match_score(column_name, aliases):
 # Vehicle Pattern Helpers
 # ----------------------------------
 
-VEHICLE_REGEX = re.compile(r'^[A-Z]{2}\d{1,2}[A-Z]{0,3}\d{1,4}$')
+VEHICLE_REGEX = re.compile(r'^[A-Z]{2}\d{1,2}[A-Z]{1,3}\d{1,4}$')
 
 
 def matches_vehicle_pattern(value):

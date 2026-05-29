@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 from uuid import UUID
 from sqlalchemy.orm import Session
 from backend.db.models import ScrapeRun, CarInfo, StatusEnum
@@ -6,8 +7,8 @@ from backend.db.models import ScrapeRun, ScrapeRunInput
 from backend.task_sender import send_scrape_row
 
 
-def start_scrape_run(db: Session, run_id: UUID):
-    """Start run + send one task per input"""
+def start_scrape_run(db: Session, run_id: UUID, limit: Optional[int] = None):
+    """Start run + send one task per input. If limit is set, only queue that many tasks."""
 
     run = db.query(ScrapeRun).filter(ScrapeRun.run_id == run_id).first()
     if not run:
@@ -23,28 +24,33 @@ def start_scrape_run(db: Session, run_id: UUID):
     if total_inputs == 0:
         raise ValueError("No valid inputs found")
 
+    effective_total = min(limit, total_inputs) if limit else total_inputs
+
     # ✅ Update run
     run.status = StatusEnum.PROCESSING
     run.started_at = datetime.utcnow()
-    run.total_inputs = total_inputs
+    run.total_inputs = effective_total
     db.commit()
 
-    # ✅ Send tasks (streaming)
+    # ✅ Send tasks (streaming, capped at effective_total)
     task_ids = []
+    sent = 0
 
     for inp in query.yield_per(50):
+        if sent >= effective_total:
+            break
         task_id = send_scrape_row(str(run_id), inp)
-
         if task_id:
             inp.task_id = task_id
             task_ids.append(task_id)
+        sent += 1
 
     db.commit()
 
     return {
         "run": run,
         "task_ids": task_ids,
-        "total": total_inputs
+        "total": effective_total
     }
 
 def complete_scrape_run(db: Session, run_id: UUID, success: bool = True) -> ScrapeRun:

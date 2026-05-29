@@ -81,6 +81,12 @@ NO_REG_REQUIRED_FIELDS = {"make", "model", "rto_location"}
 NO_REG_LABEL_FIELDS = ["make", "model", "rto_location", "yom"]
 
 
+def _clean_yom(val: str) -> str:
+    """Extract 4-digit year from strings like '2024 (SAOD)' or '2022 (3 - 5 Years)'."""
+    m = re.match(r'(\d{4})', val.strip())
+    return m.group(1) if m else val
+
+
 # ----------------------------------
 # Constants
 # ----------------------------------
@@ -168,7 +174,12 @@ def _build_no_reg_preview_rows(df: pd.DataFrame, col_map: dict) -> list:
             raw = values[i]
             val = str(raw).strip() if pd.notna(raw) else ""
             if val and val.lower() not in ("nan", "none", ""):
-                input_data[field] = val
+                if field == "yom":
+                    input_data[field] = _clean_yom(val)
+                elif field == "ncb_percent":
+                    input_data[field] = _normalize_ncb_value(val) or val
+                else:
+                    input_data[field] = val
 
         make  = input_data.get("make",         "")
         model = input_data.get("model",        "")
@@ -225,7 +236,12 @@ def _build_mixed_preview_rows(df: pd.DataFrame, vehicle_col: str | None, col_map
             raw = values[i]
             val = str(raw).strip() if pd.notna(raw) else ""
             if val and val.lower() not in ("nan", "none", ""):
-                input_data[field] = val
+                if field == "yom":
+                    input_data[field] = _clean_yom(val)
+                elif field == "ncb_percent":
+                    input_data[field] = _normalize_ncb_value(val) or val
+                else:
+                    input_data[field] = val
 
         make  = input_data.get("make",         "")
         model = input_data.get("model",        "")
@@ -643,7 +659,11 @@ def parse_manual_no_reg(data: dict) -> dict:
 
     # Keep only non-empty values
     input_data = {
-        k: str(v).strip()
+        k: (
+            _clean_yom(str(v).strip()) if k == "yom"
+            else (_normalize_ncb_value(str(v).strip()) or str(v).strip()) if k == "ncb_percent"
+            else str(v).strip()
+        )
         for k, v in data.items()
         if v and str(v).strip() and str(v).strip().lower() not in ("nan", "none", "")
     }

@@ -10,13 +10,16 @@ Only responsibility:
 ➡️ Send tasks to Celery (NO DB logic here)
 """
 
+import json
 import os
+import re
 import sys
 import logging
 from typing import List, Optional, Dict, Any
 
 from celery.result import AsyncResult
 from backend.celery_worker import celery_app
+from backend.celery.task_queue.tasks import scrape_car
 from backend.services.azure_queue import push_scrape_task
 
 # ── Logging ────────────────────────────────────────────────────────────────
@@ -26,6 +29,31 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# HELPERS
+# ───────────────────────────────────────────────────────────────────────────
+
+def _strip_cc(variant: Optional[str]) -> Optional[str]:
+    """Strip CC displacement from variant string. e.g. 'LXI (998 CC) - CNG' → 'LXI'"""
+    if not variant:
+        return variant
+    return re.sub(r'\s*\(\d+\s*CC\).*', '', variant, flags=re.IGNORECASE).strip()
+
+
+def _clean_ncb(value: Optional[str]) -> Optional[str]:
+    """Return NCB as a plain integer string. '20%' → '20', '0.2' → '20'."""
+    if not value:
+        return value
+    s = str(value).strip().replace("%", "")
+    try:
+        num = float(s)
+        if 0 < num < 1:
+            num = num * 100
+        return str(int(round(num)))
+    except (ValueError, TypeError):
+        return value
 
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -50,29 +78,50 @@ def send_scrape_row(run_id: str, inp) -> Optional[str]:
     claim_status  = getattr(inp, "claim_status", None)
     input_data    = getattr(inp, "input_data", None)   # None → with_reg, str → without_reg
 
+    # ── Parse no-reg fields from input_data JSON ─────────────────────────────
+    parsed    = json.loads(input_data) if input_data else {}
+    car_brand = parsed.get("make")
+    car_model = parsed.get("model")
+    fuel_type = parsed.get("fuel_type")
+    variant   = _strip_cc(parsed.get("variant"))
+    year      = parsed.get("yom")
+    rto_code    = parsed.get("rto_code") or parsed.get("rto_location")
+    if rto_code:
+        rto_code = rto_code.replace("-", "").replace(" ", "")
+    ncb_percent = _clean_ncb(parsed.get("ncb_percent"))
+
     # ── 1. Push to Azure Redis queue (direct JSON list) ──────────────────────
     push_scrape_task(
         run_id=run_id,
+        car_brand=car_brand,
+        car_model=car_model,
+        fuel_type=fuel_type,
+        variant=variant,
+        year=year,
+        rto_code=rto_code,
+        ncb_percent=ncb_percent,
         car_number=car_number,
-        input_data=input_data,
         cust_name=cust_name,
         phone=phone,
         policy_expiry=policy_expiry,
         claim_status=claim_status,
     )
 
-    # ── 2. Send Celery task (existing worker picks this up) ───────────────────
+    # ── 2. Send Celery task ───────────────────────────────────────────────────
     try:
-        result = celery_app.send_task(
-            "scrape_car",
-            kwargs=dict(
-                car_number=car_number,
-                run_id=run_id,
-                cust_name=cust_name,
-                phone=phone,
-                policy_expiry=policy_expiry,
-                claim_status=claim_status,
-            ),
+        result = scrape_car.delay(
+            run_id=run_id,
+            car_brand=car_brand,
+            car_model=car_model,
+            fuel_type=fuel_type,
+            variant=variant,
+            year=year,
+            rto_code=rto_code,
+            ncb_percent=ncb_percent,
+            cust_name=cust_name,
+            phone=phone,
+            policy_expiry=policy_expiry,
+            claim_status=claim_status,
         )
 
         logger.info(f"📤 Sent scrape_car → {car_number} | task_id={result.id}")

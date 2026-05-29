@@ -1,5 +1,5 @@
 import logging
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -101,6 +101,7 @@ def start_scrape(
 # =========================
 class BatchStartRequest(BaseModel):
     run_ids: List[UUID]
+    batch_size: Optional[int] = None
 
 
 @router.post("/start-batch")
@@ -109,9 +110,13 @@ def start_scrape_batch(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Start scraping for multiple runs at once."""
+    """Start scraping for multiple runs. batch_size caps the total valid runs started."""
     results = []
     for rid in body.run_ids:
+        # Stop as soon as we have queued the requested number of valid records
+        if body.batch_size is not None and len(results) >= body.batch_size:
+            break
+
         run = db.query(ScrapeRun).filter(
             ScrapeRun.run_id == rid,
             ScrapeRun.user_id == current_user.id,
@@ -129,7 +134,7 @@ def start_scrape_batch(
             continue
 
         result = start_scrape_run(db, rid)
-        logger.info(f"📤 Started run {rid} with {result['total']} tasks")
+        logger.info(f"📤 Started run {rid} with {result['total']} tasks (batch_size={body.batch_size})")
 
         results.append(str(rid))
 

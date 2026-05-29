@@ -192,6 +192,10 @@ async def phase2_quotes_setup(
                 captured_url = page.url
                 print(f"[PHASE 2] Quotes URL captured: {captured_url[:80]}...")
 
+            log.step_start("STEP_12_QUOTES_URL_CAPTURED", "Quotes page URL captured")
+            log.step_success("STEP_12_QUOTES_URL_CAPTURED", quotes_url=captured_url)
+            dbsync.push_latest_step(log)
+
             await human_delay(6000, 7000)
             default_idv, median_idv = await set_idv_to_median(page, action="get_default")
             print(f"[PHASE 2] Default IDV: {default_idv} | Median IDV: {median_idv}")

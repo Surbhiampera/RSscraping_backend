@@ -52,7 +52,7 @@ app.conf.update(
 
 # ── DB helpers ───────────────────────────────────────────────────────────────
 
-def _update_run_status(run_id, car_number, status, error=None):
+def _update_run_status(run_id, car_label, status, error=None):
     """Update scrape_runs row status. Non-fatal — logs and continues on error."""
     try:
         from datetime import datetime
@@ -71,7 +71,7 @@ def _update_run_status(run_id, car_number, status, error=None):
             (
                 status,
                 now,
-                f"Car: {car_number}" + (f" | Error: {error}" if error else ""),
+                f"Car: {car_label}" + (f" | Error: {error}" if error else ""),
                 now,
                 str(run_id),
             ),
@@ -90,14 +90,14 @@ class CallbackTask(Task):
     default_retry_delay = CELERY_TASK_DEFAULT_RETRY_DELAY
 
     def on_failure(self, exc, task_id, args, kwargs, einfo):
-        run_id     = kwargs.get("run_id") or (args[0] if args else "UNKNOWN")
-        car_number = kwargs.get("car_number", "UNKNOWN")
-        _update_run_status(run_id, car_number, "FAIL", str(exc))
-        logger.error("Task %s FAILED for %s: %s", task_id, car_number, exc)
+        run_id    = kwargs.get("run_id") or (args[0] if args else "UNKNOWN")
+        car_label = f"{kwargs.get('car_brand', '')} {kwargs.get('car_model', '')}".strip() or "UNKNOWN"
+        _update_run_status(run_id, car_label, "FAIL", str(exc))
+        logger.error("Task %s FAILED for %s: %s", task_id, car_label, exc)
 
     def on_success(self, retval, task_id, args, kwargs):
-        car_number = kwargs.get("car_number", "UNKNOWN")
-        logger.info("Task %s SUCCESS for %s", task_id, car_number)
+        car_label = f"{kwargs.get('car_brand', '')} {kwargs.get('car_model', '')}".strip() or "UNKNOWN"
+        logger.info("Task %s SUCCESS for %s", task_id, car_label)
 
 
 # ── scrape_car task ───────────────────────────────────────────────────────────
@@ -112,28 +112,24 @@ class CallbackTask(Task):
 )
 def scrape_car(
     self,
-    car_number: str,
     run_id=None,
+    car_brand: Optional[str] = None,
+    car_model: Optional[str] = None,
+    fuel_type: Optional[str] = None,
+    variant: Optional[str] = None,
+    year: Optional[str] = None,
+    rto_code: Optional[str] = None,
     cust_name: Optional[str] = None,
     phone: Optional[str] = None,
     policy_expiry: Optional[str] = None,
     claim_status: Optional[str] = None,
     user_profile_dir: Optional[str] = None,
 ):
-    """
-    Scrape insurance quotes for a car and sync results to the database.
+    car_label = f"{car_brand or ''} {car_model or ''} {variant or ''}".strip() or run_id
 
-    Args:
-        car_number:       Vehicle registration number (with_reg) or NOREG identifier (without_reg)
-        run_id:           ScrapeRun UUID — links this task to the DB record
-        cust_name:        Customer name (optional)
-        phone:            Customer phone (optional)
-        policy_expiry:    Policy expiry status (optional)
-        claim_status:     Claim status (optional)
-        user_profile_dir: Browser profile directory (optional)
-    """
     logger.info("=" * 70)
-    logger.info("TASK STARTED  run_id=%s  car=%s", run_id, car_number)
+    logger.info("TASK STARTED  run_id=%s  car=%s | rto=%s | year=%s | fuel=%s",
+                run_id, car_label, rto_code, year, fuel_type)
     logger.info("=" * 70)
 
     conn = None
@@ -141,7 +137,7 @@ def scrape_car(
         start_time = time.time()
 
         # Ensure pb_scraper is importable
-        project_root   = Path(__file__).resolve().parent.parent
+        project_root    = Path(__file__).resolve().parent.parent
         pb_scripts_path = str(project_root / "backend" / "celery" / "pb_scraper")
         for p in (str(project_root), pb_scripts_path):
             if p not in sys.path:
@@ -159,14 +155,18 @@ def scrape_car(
         db_sync = LiveDBSync(run_id, conn)
 
         # Phase 1 — scraping
-        logger.info("[1/3] Scraping %s …", car_number)
+        logger.info("[1/3] Scraping %s …", car_label)
         self.update_state(state="PROGRESS", meta={"current": 0, "total": 100, "message": "Starting browser…"})
 
         asyncio.run(
             run_scraper(
                 run_id=run_id,
-                car_number=car_number,
-                car_name="NEW_CAR",
+                car_brand=car_brand,
+                car_model=car_model,
+                fuel_type=fuel_type,
+                variant=variant,
+                year=year,
+                rto_code=rto_code,
                 cust_name=cust_name,
                 phone=phone,
                 policy_expiry=policy_expiry,
@@ -189,24 +189,24 @@ def scrape_car(
             run_id=run_id,
             status="SUCCESS",
             total_duration_ms=duration_ms,
-            notes=f"Car: {car_number} | Phone: {phone or 'N/A'}",
+            notes=f"Car: {car_label} | Phone: {phone or 'N/A'}",
         )
 
         logger.info("TASK COMPLETED  run_id=%s  duration=%d ms", run_id, duration_ms)
         return {
-            "status":      "SUCCESS",
-            "car_number":  car_number,
-            "run_id":      str(run_id),
+            "status":     "SUCCESS",
+            "car_label":  car_label,
+            "run_id":     str(run_id),
             "duration_ms": duration_ms,
         }
 
     except SoftTimeLimitExceeded:
-        logger.warning("Soft timeout for %s", car_number)
-        _update_run_status(run_id, car_number, "FAIL", "Soft time limit exceeded")
+        logger.warning("Soft timeout for %s", car_label)
+        _update_run_status(run_id, car_label, "FAIL", "Soft time limit exceeded")
         raise self.retry(countdown=CELERY_TASK_DEFAULT_RETRY_DELAY)
 
     except Exception as exc:
-        logger.error("Error for %s: %s", car_number, exc, exc_info=True)
+        logger.error("Error for %s: %s", car_label, exc, exc_info=True)
         raise self.retry(countdown=CELERY_TASK_DEFAULT_RETRY_DELAY * (self.request.retries + 1))
 
     finally:

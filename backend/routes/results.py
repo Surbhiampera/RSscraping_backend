@@ -47,6 +47,7 @@ def get_results(
     search: str = Query(None, description="Search across flat_output fields"),
     sort_by: str = Query("created_at"),
     sort_dir: str = Query("desc"),
+    date: Optional[str] = Query(None, description="Filter by run date YYYY-MM-DD"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -55,11 +56,22 @@ def get_results(
     Each FinalFlatOutput row stores flat_output as a JSON **list** of dicts.
     We explode these into individual table rows for the frontend.
     """
+    from sqlalchemy import cast, Date as SADate
+    from datetime import datetime as _dt
 
     query = db.query(FinalFlatOutput)
 
     if run_id:
         query = query.filter(FinalFlatOutput.run_id == run_id)
+
+    if date:
+        try:
+            target_date = _dt.strptime(date, "%Y-%m-%d").date()
+            query = query.join(ScrapeRun, ScrapeRun.run_id == FinalFlatOutput.run_id).filter(
+                cast(ScrapeRun.created_at, SADate) == target_date
+            )
+        except ValueError:
+            pass
 
     if sort_dir == "asc":
         query = query.order_by(FinalFlatOutput.created_at.asc())
@@ -172,13 +184,16 @@ def get_available_dates(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Return distinct YYYY-MM-DD strings that have scraped results."""
-    from sqlalchemy import cast, func
+    """Return distinct YYYY-MM-DD strings for runs that have scraped results."""
+    from sqlalchemy import cast, func, exists
     from sqlalchemy import Date as SADate
 
     rows = (
-        db.query(func.distinct(cast(FinalFlatOutput.created_at, SADate)))
-        .order_by(cast(FinalFlatOutput.created_at, SADate).desc())
+        db.query(func.distinct(cast(ScrapeRun.created_at, SADate)))
+        .filter(
+            exists().where(FinalFlatOutput.run_id == ScrapeRun.run_id)
+        )
+        .order_by(cast(ScrapeRun.created_at, SADate).desc())
         .all()
     )
     return APIResponse(data=[str(r[0]) for r in rows if r[0]])
@@ -243,8 +258,10 @@ def export_by_date(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
 
-    db_rows = db.query(FinalFlatOutput).filter(
-        cast(FinalFlatOutput.created_at, SADate) == target_date
+    db_rows = db.query(FinalFlatOutput).join(
+        ScrapeRun, ScrapeRun.run_id == FinalFlatOutput.run_id
+    ).filter(
+        cast(ScrapeRun.created_at, SADate) == target_date
     ).all()
 
     all_plans: list = []
