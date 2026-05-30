@@ -20,7 +20,6 @@ from typing import List, Optional, Dict, Any
 from celery.result import AsyncResult
 from backend.celery_worker import celery_app
 from backend.celery.task_queue.tasks import scrape_car
-from backend.services.azure_queue import push_scrape_task
 
 # ── Logging ────────────────────────────────────────────────────────────────
 
@@ -62,7 +61,7 @@ def _clean_ncb(value: Optional[str]) -> Optional[str]:
 
 def send_scrape_row(run_id: str, inp) -> Optional[str]:
     """
-    Send a single DB row as a Celery task AND push to the Azure Redis queue.
+    Send a single DB row as a Celery task.
 
     Args:
         run_id: ScrapeRun ID
@@ -90,24 +89,7 @@ def send_scrape_row(run_id: str, inp) -> Optional[str]:
         rto_code = rto_code.replace("-", "").replace(" ", "")
     ncb_percent = _clean_ncb(parsed.get("ncb_percent"))
 
-    # ── 1. Push to Azure Redis queue (direct JSON list) ──────────────────────
-    push_scrape_task(
-        run_id=run_id,
-        car_brand=car_brand,
-        car_model=car_model,
-        fuel_type=fuel_type,
-        variant=variant,
-        year=year,
-        rto_code=rto_code,
-        ncb_percent=ncb_percent,
-        car_number=car_number,
-        cust_name=cust_name,
-        phone=phone,
-        policy_expiry=policy_expiry,
-        claim_status=claim_status,
-    )
-
-    # ── 2. Send Celery task ───────────────────────────────────────────────────
+    # ── Send Celery task (single dispatch — broker == Azure Redis queue) ──────
     try:
         result = scrape_car.delay(
             run_id=run_id,

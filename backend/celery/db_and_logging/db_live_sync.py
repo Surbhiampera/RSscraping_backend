@@ -183,12 +183,7 @@ class LiveDBSync:
     def _auto_run_pipeline(self):
         """Automatically run the quotes pipeline to populate final_flat_output."""
         try:
-            backend_root = Path(__file__).resolve().parent.parent.parent
-            db_flow_path = str(backend_root / "db_complete_flow")
-            if db_flow_path not in sys.path:
-                sys.path.insert(0, db_flow_path)
-
-            import run_pipeline_v2
+            from RSscraping_backend.backend.db_complete_flow.db_pipeline import run_pipeline_v2
             print(f"\n🔄 Auto-running pipeline for run_id={self.run_id}")
             success = run_pipeline_v2.run_pipeline(self.run_id)
             if success:

@@ -56,7 +56,8 @@ def get_results(
     Each FinalFlatOutput row stores flat_output as a JSON **list** of dicts.
     We explode these into individual table rows for the frontend.
     """
-    from sqlalchemy import cast, Date as SADate
+    from sqlalchemy import cast, func
+    from sqlalchemy import Date as SADate
     from datetime import datetime as _dt
 
     query = db.query(FinalFlatOutput)
@@ -68,7 +69,7 @@ def get_results(
         try:
             target_date = _dt.strptime(date, "%Y-%m-%d").date()
             query = query.join(ScrapeRun, ScrapeRun.run_id == FinalFlatOutput.run_id).filter(
-                cast(ScrapeRun.created_at, SADate) == target_date
+                cast(ScrapeRun.started_at, SADate) == target_date
             )
         except ValueError:
             pass
@@ -188,12 +189,18 @@ def get_available_dates(
     from sqlalchemy import cast, func, exists
     from sqlalchemy import Date as SADate
 
+    # Use started_at — present in all runs (both old-pipeline 'SUCCESS' and new 'PASS').
+    # Avoid referencing created_at here: old pipeline tables may lack that column,
+    # which would cause a "column does not exist" error before migrations run.
     rows = (
-        db.query(func.distinct(cast(ScrapeRun.created_at, SADate)))
+        db.query(cast(ScrapeRun.started_at, SADate))
+        .select_from(ScrapeRun)
         .filter(
-            exists().where(FinalFlatOutput.run_id == ScrapeRun.run_id)
+            ScrapeRun.started_at.isnot(None),
+            exists().where(FinalFlatOutput.run_id == ScrapeRun.run_id),
         )
-        .order_by(cast(ScrapeRun.created_at, SADate).desc())
+        .distinct()
+        .order_by(cast(ScrapeRun.started_at, SADate).desc())
         .all()
     )
     return APIResponse(data=[str(r[0]) for r in rows if r[0]])
@@ -250,7 +257,7 @@ def export_by_date(
     """Export all records scraped on a specific date, filtered by IDV type."""
     from backend.services.export_service import export_to_excel
     from datetime import datetime
-    from sqlalchemy import func, cast
+    from sqlalchemy import cast
     from sqlalchemy import Date as SADate
 
     try:
@@ -261,7 +268,7 @@ def export_by_date(
     db_rows = db.query(FinalFlatOutput).join(
         ScrapeRun, ScrapeRun.run_id == FinalFlatOutput.run_id
     ).filter(
-        cast(ScrapeRun.created_at, SADate) == target_date
+        cast(ScrapeRun.started_at, SADate) == target_date
     ).all()
 
     all_plans: list = []

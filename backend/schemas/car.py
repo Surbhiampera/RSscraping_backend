@@ -79,7 +79,7 @@ class FlatOutputOut(BaseModel):
     id: str
     run_id: str
     flat_output: Any
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)

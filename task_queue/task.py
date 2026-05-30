@@ -119,6 +119,7 @@ def scrape_car(
     variant: Optional[str] = None,
     year: Optional[str] = None,
     rto_code: Optional[str] = None,
+    ncb_percent: Optional[str] = None,
     cust_name: Optional[str] = None,
     phone: Optional[str] = None,
     policy_expiry: Optional[str] = None,

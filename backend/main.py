@@ -17,6 +17,21 @@ try:
             "ALTER TABLE scrape_run_inputs ADD COLUMN IF NOT EXISTS input_data TEXT",
             "ALTER TABLE car_info ADD COLUMN IF NOT EXISTS status statusenum DEFAULT 'PENDING'",
             "ALTER TABLE car_info ADD COLUMN IF NOT EXISTS error_message TEXT",
+            # scrape_runs: old pipeline schema may not have created_at / updated_at
+            "ALTER TABLE scrape_runs ADD COLUMN IF NOT EXISTS created_at TIMESTAMP",
+            "UPDATE scrape_runs SET created_at = started_at WHERE created_at IS NULL AND started_at IS NOT NULL",
+            "UPDATE scrape_runs SET created_at = NOW() WHERE created_at IS NULL",
+            "ALTER TABLE scrape_runs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP",
+            "UPDATE scrape_runs SET updated_at = COALESCE(started_at, NOW()) WHERE updated_at IS NULL",
+            # final_flat_output: old pipeline schema may not have created_at / updated_at
+            # ADD COLUMN must come before ALTER COLUMN or the alter will fail on old schemas
+            "ALTER TABLE final_flat_output ADD COLUMN IF NOT EXISTS created_at TIMESTAMP",
+            "ALTER TABLE final_flat_output ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP",
+            # Backfill created_at from the parent run's started_at for old pipeline rows
+            "UPDATE final_flat_output SET created_at = (SELECT started_at FROM scrape_runs WHERE scrape_runs.run_id = final_flat_output.run_id) WHERE created_at IS NULL",
+            "UPDATE final_flat_output SET created_at = NOW() WHERE created_at IS NULL",
+            "UPDATE final_flat_output SET updated_at = COALESCE(updated_at, created_at, NOW()) WHERE updated_at IS NULL",
+            "ALTER TABLE final_flat_output ALTER COLUMN created_at SET DEFAULT NOW()",
         ]
         for sql in migrations:
             try:

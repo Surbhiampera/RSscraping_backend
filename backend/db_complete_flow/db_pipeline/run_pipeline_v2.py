@@ -95,7 +95,7 @@ def run_pipeline(run_id: str):
     # ── STEP 3: final_flat_output → Excel ─────────────────────────────────────
     print("\n🔹 STEP 3: Exporting Excel")
 
-    flatdb_excel.main(runid)
+    flatdb_excel.main(run_id)
 
     print("\n======================================")
     print("🎉 PIPELINE COMPLETED SUCCESSFULLY")
@@ -138,10 +138,6 @@ def main():
         pending = success_run_ids
     else:
         pending = [rid for rid in success_run_ids if rid not in already_processed]
-
-    pending = [rid for rid in success_run_ids if rid not in already_processed]
-
-    pending = [rid for rid in pending if rid not in ids_to_skip]
 
     # ── Show summary upfront ──────────────────────────────────────────────────
     print("=" * 60)

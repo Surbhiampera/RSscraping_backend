@@ -277,12 +277,15 @@ def save_flat_output(run_id, flat_rows):
     conn = get_connection()
     cur  = conn.cursor()
 
+    # Replace any existing row for this run so re-runs don't create duplicates
+    cur.execute(f"DELETE FROM {FLAT_TABLE} WHERE run_id = %s", (str(run_id),))
+
     json_array = json.dumps(flat_rows)
 
     cur.execute(
         f"""
-        INSERT INTO {FLAT_TABLE} (run_id, flat_output)
-        VALUES (%s, %s)
+        INSERT INTO {FLAT_TABLE} (run_id, flat_output, created_at, updated_at)
+        VALUES (%s, %s, NOW(), NOW())
         """,
         (str(run_id), json_array)
     )
