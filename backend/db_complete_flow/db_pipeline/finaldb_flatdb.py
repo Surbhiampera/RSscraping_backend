@@ -1,3 +1,4 @@
+import re
 import psycopg2
 import json
 from copy import deepcopy
@@ -60,6 +61,31 @@ def fetch_final_data():
     cur.close()
     conn.close()
     return rows  # list of tuples: (run_id, final_data JSONB, created_at)
+
+
+def fetch_final_data_for_run(run_id: str):
+    """Fetch a single run's final_data row — avoids full-table scan."""
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute(
+        f"SELECT run_id, final_data, created_at FROM {FINAL_TABLE} WHERE run_id = %s LIMIT 1",
+        (str(run_id),),
+    )
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row  # tuple (run_id, final_data, created_at) or None
+
+
+def fetch_run_created_at(run_id: str):
+    """Return scrape_runs.created_at for the given run — authoritative extraction timestamp."""
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("SELECT created_at FROM scrape_runs WHERE run_id = %s LIMIT 1", (str(run_id),))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row[0] if row else None  # datetime or None
 
 
 # -------------------------------
@@ -140,7 +166,6 @@ def flatten_final_data(run_id, final_data, eligible_ncb_dict: dict, created_at=N
         created_at.strftime("%Y-%m-%d") if created_at else None
         or final_data.get("extracted_date")
         or car_info.get("extractedDate")
-        or datetime.now().strftime("%Y-%m-%d")
     )
 
     # ── Collect all dynamic addon names across all plans ─────────────────────
@@ -182,6 +207,13 @@ def flatten_final_data(run_id, final_data, eligible_ncb_dict: dict, created_at=N
             cc_int   = car_info.get("cubicCapacity")
             cc_range = get_cc_range(cc_int)
 
+            # ── RTO Code — prefer the pre-resolved code stored by responses_final_v2,
+            #    fall back to extracting the first 4 chars of the registration number.
+            rto_code = car_info.get("rto_code") or None
+            if not rto_code:
+                reg_no   = str(car_info.get("regNo") or "")
+                rto_code = re.sub(r'[^A-Z0-9]', '', reg_no.upper())[:4] or None
+
             # ── RTO location ──────────────────────────────────────────────────
             rto_location = car_info.get("rto_location")
 
@@ -208,6 +240,7 @@ def flatten_final_data(run_id, final_data, eligible_ncb_dict: dict, created_at=N
 
                 # ── Car info ──────────────────────────────────────────────────
                 "Rto Location": rto_location,
+                "Rto Code":     rto_code,
                 "Make":         car_info.get("makeName"),
                 "Model":        car_info.get("modelName"),
                 "Variant":      car_info.get("vehicle_variant"),
@@ -248,6 +281,8 @@ def flatten_final_data(run_id, final_data, eligible_ncb_dict: dict, created_at=N
                 # ── Totals ────────────────────────────────────────────────────
                 "Total TP Premium":                 pb.get("Third Party Cover Premium"),
                 "Final Premium visible to customer": pb.get("finalPremium"),
+
+                "Extracted Date": extracted_date,
             }
 
             # ── Remaining dynamic addons ──────────────────────────────────────

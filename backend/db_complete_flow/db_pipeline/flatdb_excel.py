@@ -19,6 +19,39 @@ DB_PASSWORD = os.environ.get("DB_PASSWORD")
 
 OUTPUT_DIR = "batch_three_33_records"
 _RTO_CITY_MAP = None
+_REVERSE_RTO_MAP = None
+
+# Canonical city names for these exact RTO codes — takes priority over CSV Place names.
+CANONICAL_RTO_CITY: dict[str, str] = {
+    "GJ01": "Ahmedabad",
+    "KA01": "Bengaluru",
+    "TN01": "Chennai",
+    "DL02": "Delhi NCR",
+    "TS09": "Hyderabad",
+    "WB01": "Kolkata",
+    "MH01": "Mumbai",
+    "MH12": "Pune",
+    "MH20": "Aurangabad",
+    "OD02": "Bhubaneswar",
+    "CH01": "Chandigarh",
+    "UK07": "Dehradun",
+    "GA07": "Goa (Panaji)",
+    "PB08": "Jalandhar",
+    "JK02": "Jammu",
+    "MH09": "Kolhapur",
+    "UP32": "Lucknow",
+    "PB10": "Ludhiana",
+    "MH31": "Nagpur",
+    "MH15": "Nashik",
+    "BR01": "Patna",
+    "GJ03": "Rajkot",
+    "JH01": "Ranchi",
+    "HP01": "Shimla",
+    "GJ05": "Surat",
+    "GJ06": "Vadodara",
+    "AP16": "Vijayawada",
+    "AP31": "Vishakhapatnam",
+}
 
 # ---------------------------------------------------------------------------
 # Tariff rate table
@@ -109,6 +142,21 @@ def fetch_flat_output(run_id: str):
     return row[0]
 
 
+def fetch_run_created_at_str(run_id: str) -> str | None:
+    """Return scrape_runs.created_at as YYYY-MM-DD string — authoritative extraction date."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT created_at FROM scrape_runs WHERE run_id = %s LIMIT 1", (str(run_id),))
+        row = cur.fetchone()
+        cur.close()
+    finally:
+        conn.close()
+    if row and row[0]:
+        return row[0].strftime("%Y-%m-%d")
+    return None
+
+
 def fetch_car_number_for_run(run_id: str) -> str | None:
     conn = get_connection()
     try:
@@ -133,6 +181,23 @@ def fetch_car_number_for_run(run_id: str) -> str | None:
 
 def normalize_code(value) -> str:
     return re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
+
+
+def _normalize_to_rto_office_code(code: str) -> str | None:
+    """Convert any RTO-derived string to the canonical 4-char office code.
+
+    DL2  → DL02   (single-digit district, no leading zero)
+    DL2C → DL02   (series letter after single-digit district)
+    MH01 → MH01   (already correct)
+    MH12 → MH12   (two-digit district, unchanged)
+    """
+    if not code:
+        return None
+    m = re.match(r"^([A-Z]{2})0*(\d+)", code)
+    if not m:
+        return None
+    state, num_str = m.group(1), m.group(2)
+    return f"{state}{int(num_str):02d}"
 
 
 def to_num(value) -> float:
@@ -166,7 +231,7 @@ def load_rto_city_map() -> dict:
     if _RTO_CITY_MAP is not None:
         return _RTO_CITY_MAP
 
-    csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "rto_locator", "RTO_vehicle_codes.csv")
+    csv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "rto_locator", "RTO_vehicle_codes.csv")
     rto_df = pd.read_csv(csv_path, usecols=["RegNo", "Place", "State"])
     _RTO_CITY_MAP = {
         normalize_code(row["RegNo"]): {
@@ -179,19 +244,88 @@ def load_rto_city_map() -> dict:
     return _RTO_CITY_MAP
 
 
+def load_reverse_rto_map() -> dict:
+    """city_lowercase → first RTO code (e.g. 'bengaluru' → 'KA01')."""
+    global _REVERSE_RTO_MAP
+    if _REVERSE_RTO_MAP is not None:
+        return _REVERSE_RTO_MAP
+    rto_map = load_rto_city_map()
+    reverse: dict = {}
+    for code, info in rto_map.items():
+        city = info.get("city", "").lower().strip()
+        if city and city not in reverse:
+            reverse[city] = code
+    _REVERSE_RTO_MAP = reverse
+    return _REVERSE_RTO_MAP
+
+
+def reverse_rto_lookup(city: str) -> str | None:
+    """Return the first RTO code found for a given city name (case-insensitive).
+    Falls back to substring matching to handle cases like 'Chennai Rto' → 'Chennai'."""
+    if not city:
+        return None
+    city_lower = city.strip().lower()
+    if not city_lower:
+        return None
+    reverse_map = load_reverse_rto_map()
+
+    # 1. Exact match
+    code = reverse_map.get(city_lower)
+    if code:
+        return code
+
+    # 2. Alias match (Bengaluru/Bangalore, Mumbai/Bombay, etc.)
+    _aliases = {
+        "bengaluru": "bangalore", "bangalore": "bengaluru",
+        "mumbai": "bombay",       "bombay": "mumbai",
+        "kolkata": "calcutta",    "calcutta": "kolkata",
+        "delhi": "new delhi",     "new delhi": "delhi",
+    }
+    alt = _aliases.get(city_lower)
+    if alt:
+        code = reverse_map.get(alt)
+        if code:
+            return code
+
+    # 3. Substring match: handles "Chennai Rto" → matches CSV "Chennai"
+    for map_city, map_code in reverse_map.items():
+        if map_city and (map_city in city_lower or city_lower in map_city):
+            return map_code
+
+    return None
+
+
 def resolve_rto_location(rto_location=None, rto_number=None, city=None):
+    rto_number_text = normalize_code(rto_number) if rto_number else None
+    office_code = _normalize_to_rto_office_code(rto_number_text) if rto_number_text else None
+    lookup_code = office_code or rto_number_text
+
+    # Canonical override: use exact city name for known codes
+    if lookup_code and lookup_code in CANONICAL_RTO_CITY:
+        canonical_city = CANONICAL_RTO_CITY[lookup_code]
+        rto_info = load_rto_city_map().get(lookup_code, {})
+        state = rto_info.get("state")
+        return f"{canonical_city}, {state}" if state else canonical_city
+
     rto_location_text = clean_text(rto_location)
     if rto_location_text:
         return rto_location_text
 
-    rto_number_text = normalize_code(rto_number)
-    rto_info = load_rto_city_map().get(rto_number_text, {}) if rto_number_text else {}
+    rto_info = load_rto_city_map().get(lookup_code, {}) if lookup_code else {}
     location_parts = [rto_info.get("city") or clean_text(city), rto_info.get("state")]
     resolved = ", ".join(part for part in location_parts if part)
     return resolved or None
 
 
 def resolve_city(city, rto_location=None, rto_number=None):
+    rto_number_text = normalize_code(rto_number) if rto_number else None
+    office_code = _normalize_to_rto_office_code(rto_number_text) if rto_number_text else None
+    lookup_code = office_code or rto_number_text
+
+    # Canonical override: always use exact city name for known codes
+    if lookup_code and lookup_code in CANONICAL_RTO_CITY:
+        return CANONICAL_RTO_CITY[lookup_code]
+
     city_text = clean_text(city)
     if city_text:
         return city_text
@@ -202,9 +336,8 @@ def resolve_city(city, rto_location=None, rto_number=None):
         if clean_text(first_part):
             return first_part
 
-    rto_number_text = normalize_code(rto_number)
-    if rto_number_text:
-        rto_info = load_rto_city_map().get(rto_number_text, {})
+    if lookup_code:
+        rto_info = load_rto_city_map().get(lookup_code, {})
         return rto_info.get("city")
 
     return None
@@ -270,6 +403,18 @@ def cc_bucket(cc):
     return "abv_1500"
 
 
+def cc_range_label(cc) -> str | None:
+    """Human-readable CC band. For >1500 the actual CC is the upper bound."""
+    cc_n = to_num(cc)
+    if cc_n <= 0:
+        return None
+    if cc_n <= 1000:
+        return "Up to 1000"
+    if cc_n <= 1500:
+        return "1001-1500"
+    return f"1501-{int(cc_n)}"
+
+
 def lookup_tariff(zone, age, cc):
     if not age or not cc:
         return 0.0
@@ -299,8 +444,7 @@ def main(run_id: str):
         df["Car Number"] = None
     if "Rto Location" not in df.columns:
         df["Rto Location"] = None
-    if "Extracted Date" not in df.columns:
-        df["Extracted Date"] = datetime.now().strftime("%Y-%m-%d")
+    df["Extracted Date"] = fetch_run_created_at_str(run_id)
     if "Bi Fuel Kit Premium" not in df.columns:
         df["Bi Fuel Kit Premium"] = None
     for col in [
@@ -315,19 +459,54 @@ def main(run_id: str):
         if col not in df.columns:
             df[col] = 0
 
+    # Internal car number used only for zone classification — never written to output
     fallback_car_number = fetch_car_number_for_run(run_id)
-    df["Car Number"] = [
-        normalize_car_number(car_number if clean_text(car_number) else fallback_car_number, rto_number)
-        for car_number, rto_number in zip(df["Car Number"], df["Rto Number"])
+    _car_nums = [
+        normalize_car_number(cn if clean_text(cn) else fallback_car_number, rn)
+        for cn, rn in zip(df["Car Number"], df["Rto Number"])
     ]
+    df["_cn_internal"] = _car_nums
+
+    # Derive RTO Code — priority: stored value → car number → city reverse lookup → Rto Number
+    _rto_codes_main = []
+    for _i in range(len(df)):
+        _code = None
+        if "Rto Code" in df.columns:
+            _raw = df["Rto Code"].iloc[_i]
+            _cs = clean_text(str(_raw)) if _raw is not None else None
+            if _cs and _cs.lower() not in {"0", "none", "nan"}:
+                _code = normalize_code(_cs)[:4] or None
+        if not _code:
+            _cn = _car_nums[_i]
+            if _cn and _cn not in {"0", ""} and len(_cn) >= 4:
+                _code = _cn[:4]
+        if not _code and "Rto Location" in df.columns:
+            _loc = df["Rto Location"].iloc[_i]
+            _ls = clean_text(str(_loc)) if _loc is not None else None
+            if _ls:
+                _code = reverse_rto_lookup(_ls.split(",")[0].strip())
+        if not _code and "Rto Number" in df.columns:
+            _rn = normalize_code(str(df["Rto Number"].iloc[_i] or ""))
+            if _rn:
+                _code = _rn[:4]
+        if _code:
+            _norm = _normalize_to_rto_office_code(_code)
+            if _norm:
+                _code = _norm
+        _rto_codes_main.append(_code)
+    df["RTO Code"] = _rto_codes_main
+
     df["Rto Location"] = [
-        resolve_rto_location(rto_location, rto_number, city)
-        for rto_location, rto_number, city in zip(df["Rto Location"], df["Rto Number"], df["City"])
+        resolve_rto_location(loc, rto_code, city)
+        for loc, rto_code, city in zip(df["Rto Location"], df["RTO Code"], df["City"])
     ]
     df["City"] = [
-        resolve_city(city, rto_location, rto_number)
-        for city, rto_location, rto_number in zip(df["City"], df["Rto Location"], df["Rto Number"])
+        resolve_city(city, loc, rto_code)
+        for city, loc, rto_code in zip(df["City"], df["Rto Location"], df["RTO Code"])
     ]
+
+    # CC Range — actual upper bound for the >1500 band
+    df["CC Range"] = df["CC"].apply(cc_range_label)
 
     ages = []
     tariff_rates = []
@@ -338,7 +517,7 @@ def main(run_id: str):
     nil_dep_rates = []
 
     for _, row in df.iterrows():
-        zone = classify_zone(row.get("Rto Location"), row.get("Car Number"))
+        zone = classify_zone(row.get("Rto Location"), row.get("_cn_internal"))
         age_lookup = age_bucket(row.get("YOM"))
         cc_lookup = cc_bucket(row.get("CC"))
         tariff_rate = lookup_tariff(zone, age_lookup, cc_lookup)
@@ -381,14 +560,14 @@ def main(run_id: str):
     df["Nil Dep Rate"] = nil_dep_rates
 
     column_order = [
-        "Car Number",
-        "Rto Number",
+        "RTO Code",
         "Rto Location",
         "City",
         "Make",
         "Model",
         "Variant",
         "CC",
+        "CC Range",
         "Fuel Type",
         "Insurer",
         "Tariff Rate",
@@ -527,31 +706,66 @@ def build_excel_df(rows: list) -> "pd.DataFrame":
             df[col] = default
 
     if "Extracted Date" not in df.columns:
-        df["Extracted Date"] = datetime.now().strftime("%Y-%m-%d")
+        df["Extracted Date"] = None
 
     for col in ["Age Bucket", "Tariff Rate", "Tariff Rate Premium",
                 "OD Discount Rate", "Total discount", "Net OD Rate", "Nil Dep Rate"]:
         if col not in df.columns:
             df[col] = 0
 
-    df["Car Number"] = [
+    # Internal car number for zone classification — not written to output
+    _car_nums = [
         normalize_car_number(cn, rn)
         for cn, rn in zip(df["Car Number"], df["Rto Number"])
     ]
+    df["_cn_internal"] = _car_nums
+
+    # Derive RTO Code — priority: stored value → car number → city reverse lookup → Rto Number
+    _rto_codes = []
+    for _i in range(len(df)):
+        _code = None
+        if "Rto Code" in df.columns:
+            _raw = df["Rto Code"].iloc[_i]
+            _cs = clean_text(str(_raw)) if _raw is not None else None
+            if _cs and _cs.lower() not in {"0", "none", "nan"}:
+                _code = normalize_code(_cs)[:4] or None
+        if not _code:
+            _cn = _car_nums[_i]
+            if _cn and _cn not in {"0", ""} and len(_cn) >= 4:
+                _code = _cn[:4]
+        if not _code and "Rto Location" in df.columns:
+            _loc = df["Rto Location"].iloc[_i]
+            _ls = clean_text(str(_loc)) if _loc is not None else None
+            if _ls:
+                _code = reverse_rto_lookup(_ls.split(",")[0].strip())
+        if not _code and "Rto Number" in df.columns:
+            _rn = normalize_code(str(df["Rto Number"].iloc[_i] or ""))
+            if _rn:
+                _code = _rn[:4]
+        if _code:
+            _norm = _normalize_to_rto_office_code(_code)
+            if _norm:
+                _code = _norm
+        _rto_codes.append(_code)
+    df["RTO Code"] = _rto_codes
+
     df["Rto Location"] = [
-        resolve_rto_location(loc, rn, city)
-        for loc, rn, city in zip(df["Rto Location"], df["Rto Number"], df["City"])
+        resolve_rto_location(loc, rto_code, city)
+        for loc, rto_code, city in zip(df["Rto Location"], df["RTO Code"], df["City"])
     ]
     df["City"] = [
-        resolve_city(city, loc, rn)
-        for city, loc, rn in zip(df["City"], df["Rto Location"], df["Rto Number"])
+        resolve_city(city, loc, rto_code)
+        for city, loc, rto_code in zip(df["City"], df["Rto Location"], df["RTO Code"])
     ]
+
+    # CC Range — actual upper bound for the >1500 band
+    df["CC Range"] = df["CC"].apply(cc_range_label)
 
     ages, tariff_rates, tariff_premiums = [], [], []
     od_discount_rates, total_discounts, net_od_rates, nil_dep_rates = [], [], [], []
 
     for _, row in df.iterrows():
-        zone = classify_zone(row.get("Rto Location"), row.get("Car Number"))
+        zone = classify_zone(row.get("Rto Location"), row.get("_cn_internal"))
         age_lkp = age_bucket(row.get("YOM"))
         cc_lkp = cc_bucket(row.get("CC"))
         tariff_rate = lookup_tariff(zone, age_lkp, cc_lkp)
@@ -588,19 +802,11 @@ def build_excel_df(rows: list) -> "pd.DataFrame":
     df["Net OD Rate"] = net_od_rates
     df["Nil Dep Rate"] = nil_dep_rates
 
-    # Use Car Number if any row has a real value; otherwise use Rto Number
-    _invalid = {"", "0", "none", "null", "nan", "n/a"}
-    has_car_number = df["Car Number"].apply(
-        lambda x: bool(x) and str(x).strip().lower() not in _invalid
-    ).any()
-
-    if has_car_number:
-        leading_id_cols = ["Car Number", "Rto Location", "City"]
-    else:
-        leading_id_cols = ["Rto Number", "Rto Location", "City"]
-
-    column_order = leading_id_cols + [
-        "Make", "Model", "Variant", "CC", "Fuel Type", "Insurer",
+    column_order = [
+        "RTO Code",
+        "Rto Location",
+        "City",
+        "Make", "Model", "Variant", "CC", "CC Range", "Fuel Type", "Insurer",
         "Tariff Rate", "NCB %", "Nil Dep", "YOM", "Age Bucket", "IDV", "IDV Type",
         "Basic OD Premium", "Other Discounts", "No-Claim Bonus",
         "Tariff Rate Premium", "OD Discount Rate", "Total discount", "Net OD Rate",

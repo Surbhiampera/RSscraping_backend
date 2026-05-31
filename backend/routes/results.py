@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from uuid import UUID
@@ -22,6 +22,33 @@ CAR_IDENTITY_KEYS = ("Make", "Model", "Variant", "Rto Location", "YOM", "CC", "F
 def _car_identity(plan: dict) -> str:
     """Build a stable string key that identifies a unique car."""
     return "|".join(str(plan.get(k) or "") for k in CAR_IDENTITY_KEYS)
+
+
+def _inject_extracted_dates(db: Session, rows: list) -> list:
+    """Set 'Extracted Date' in each row from scrape_runs.created_at (authoritative source)."""
+    from uuid import UUID as _UUID
+    run_ids_str = list({str(r.get("run_id")) for r in rows if r.get("run_id")})
+    if not run_ids_str:
+        return rows
+    uuid_list = []
+    for rid in run_ids_str:
+        try:
+            uuid_list.append(_UUID(rid))
+        except (ValueError, AttributeError):
+            pass
+    if not uuid_list:
+        return rows
+    date_map = {
+        str(sr.run_id): sr.created_at.strftime("%Y-%m-%d") if sr.created_at else None
+        for sr in db.query(ScrapeRun.run_id, ScrapeRun.created_at)
+                     .filter(ScrapeRun.run_id.in_(uuid_list))
+                     .all()
+    }
+    for row in rows:
+        rid = str(row.get("run_id", ""))
+        if rid in date_map:
+            row["Extracted Date"] = date_map[rid]
+    return rows
 
 
 def _get_user_flat_rows(db: Session, car_key: str | None = None) -> list:
@@ -60,7 +87,8 @@ def get_results(
     from sqlalchemy import Date as SADate
     from datetime import datetime as _dt
 
-    query = db.query(FinalFlatOutput)
+    from sqlalchemy.orm import joinedload
+    query = db.query(FinalFlatOutput).options(joinedload(FinalFlatOutput.scrape_run))
 
     if run_id:
         query = query.filter(FinalFlatOutput.run_id == run_id)
@@ -151,7 +179,7 @@ def get_results(
                 "id": str(r.id),
                 "run_id": str(r.run_id),
                 "flat_output": summary,
-                "created_at": r.created_at,
+                "created_at": r.scrape_run.created_at if r.scrape_run else r.created_at,
                 "updated_at": r.updated_at,
             })
             sr_counter += 1
@@ -220,6 +248,8 @@ def export_results(
     if not rows:
         raise HTTPException(status_code=404, detail="No data to export")
 
+    _inject_extracted_dates(db, rows)
+
     fmt = body.format.value if hasattr(body.format, "value") else str(body.format)
     idv_type = body.idv_type or None
 
@@ -287,6 +317,8 @@ def export_by_date(
     if not filtered:
         raise HTTPException(status_code=404, detail=f"No {idv_type} IDV data for {date}")
 
+    _inject_extracted_dates(db, filtered)
+
     fname = f"{date}_{idv_type}.xlsx"
     content = export_to_excel(filtered, idv_type=idv_type)
     return StreamingResponse(
@@ -326,6 +358,8 @@ def export_single_car(
 
     if not rows:
         raise HTTPException(status_code=404, detail="No data found for this car")
+
+    _inject_extracted_dates(db, rows)
 
     first = rows[0]
     rto = (first.get("Rto Number") or first.get("Rto Location") or "").strip()
@@ -380,6 +414,48 @@ def get_raw_json(
     else:
         cleaned = raw
     return APIResponse(data=cleaned)
+
+
+@router.post("/admin/reprocess-pipeline", response_model=APIResponse)
+def reprocess_pipeline_admin(
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Re-run the full pipeline for every SUCCESS scrape run.
+    Runs in the background using the server's DB connection.
+    Check server logs for per-run progress.
+    """
+    from sqlalchemy import text
+
+    run_ids = [
+        str(row[0])
+        for row in db.execute(
+            text("SELECT run_id FROM scrape_runs WHERE status = 'SUCCESS'")
+        ).fetchall()
+    ]
+
+    def _do_reprocess(ids: list):
+        from RSscraping_backend.backend.db_complete_flow.db_pipeline import run_pipeline_v2
+        ok = fail = 0
+        for rid in ids:
+            try:
+                success = run_pipeline_v2.run_pipeline(rid)
+                if success:
+                    ok += 1
+                    print(f"✅ Reprocess OK: {rid}")
+                else:
+                    ok += 1
+                    print(f"⚠️  Reprocess skipped (no data): {rid}")
+            except Exception as e:
+                fail += 1
+                print(f"❌ Reprocess failed for {rid}: {e}")
+        print(f"📊 Reprocess complete — ok={ok}, failed={fail}")
+
+    background_tasks.add_task(_do_reprocess, run_ids)
+    return APIResponse(
+        message=f"Reprocessing {len(run_ids)} pipeline runs in background — check server logs for progress"
+    )
 
 
 @router.post("/retry-failed", response_model=APIResponse)

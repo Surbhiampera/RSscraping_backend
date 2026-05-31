@@ -54,6 +54,7 @@ from backend.upload_parser.utils import (
     DATE_FORMATS,
     VALID_STATE_CODES,
     STRUCTURED_FIELD_ALIASES,
+    is_valid_quotes_url,
 )
 
 from .detectors import (
@@ -167,6 +168,8 @@ def _build_no_reg_preview_rows(df: pd.DataFrame, col_map: dict) -> list:
     }
     n_rows = len(df)
     rows   = []
+    # Only enforce quotes_url validation when the column is present in the upload
+    has_quotes_url_col = "quotes_url" in col_arrays
 
     for i in range(n_rows):
         input_data: dict = {}
@@ -189,11 +192,22 @@ def _build_no_reg_preview_rows(df: pd.DataFrame, col_map: dict) -> list:
         label_parts = [p for p in [make, model, rto, yom] if p]
         label    = " | ".join(label_parts) if label_parts else f"Row {i + 1}"
         is_valid = bool(make and model and rto)
+        error    = None if is_valid else "Missing required: Make, Model, RTO Location"
+
+        # Validate quotes_url only when the column exists in the uploaded file
+        if is_valid and has_quotes_url_col:
+            url = input_data.get("quotes_url", "")
+            if not url:
+                is_valid = False
+                error    = "Missing quotes_url"
+            elif not is_valid_quotes_url(url):
+                is_valid = False
+                error    = "Invalid quotes_url format (must start with http:// or https://)"
 
         rows.append({
             "car_number": label,
             "is_valid":   is_valid,
-            "error":      None if is_valid else "Missing required: Make, Model, RTO Location",
+            "error":      error,
             "input_data": input_data,
         })
     return rows
@@ -221,6 +235,7 @@ def _build_mixed_preview_rows(df: pd.DataFrame, vehicle_col: str | None, col_map
         for field, col in col_map.items()
         if col in df.columns
     }
+    has_quotes_url_col = "quotes_url" in col_arrays
 
     rows = []
     for i in range(len(df)):
@@ -249,8 +264,21 @@ def _build_mixed_preview_rows(df: pd.DataFrame, vehicle_col: str | None, col_map
         yom   = input_data.get("yom",          "")
 
         if make and model and rto:
-            label = " | ".join(p for p in [make, model, rto, yom] if p)
-            rows.append({"car_number": label, "is_valid": True, "error": None, "input_data": input_data})
+            label      = " | ".join(p for p in [make, model, rto, yom] if p)
+            is_valid   = True
+            row_error  = None
+
+            # Validate quotes_url only when the column exists in the uploaded file
+            if has_quotes_url_col:
+                url = input_data.get("quotes_url", "")
+                if not url:
+                    is_valid  = False
+                    row_error = "Missing quotes_url"
+                elif not is_valid_quotes_url(url):
+                    is_valid  = False
+                    row_error = "Invalid quotes_url format (must start with http:// or https://)"
+
+            rows.append({"car_number": label, "is_valid": is_valid, "error": row_error, "input_data": input_data})
         else:
             rows.append({
                 "car_number": raw_reg.strip() or f"Row {i + 1}",

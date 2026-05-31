@@ -54,6 +54,12 @@ app.conf.update(
     task_track_started=True,
     broker_use_ssl=_ssl_opts or None,
     redis_backend_use_ssl=_ssl_opts or None,
+    beat_schedule={
+        "pipeline-catchup-every-5-min": {
+            "task": "pipeline_catchup",
+            "schedule": 300.0,  # every 5 minutes
+        },
+    },
 )
 
 # ============================================================================
@@ -223,6 +229,7 @@ def scrape_car(
     phone: Optional[str] = None,
     policy_expiry: Optional[str] = None,
     claim_status: Optional[str] = None,
+    quotes_url: Optional[str] = None,
     user_profile_dir: Optional[str] = None,
 ):
 
@@ -276,6 +283,7 @@ def scrape_car(
                 phone=phone,
                 policy_expiry=policy_expiry,
                 claim_status=claim_status,
+                QUOTES_URL=quotes_url,
                 user_profile_dir=user_profile_dir,
             )
         )
@@ -340,6 +348,55 @@ def health_check(self):
     """Health check task"""
     logger.info("🏥 Health check OK")
     return {"status": "HEALTHY"}
+
+
+@app.task(bind=True, name="pipeline_catchup", ignore_result=True)
+def pipeline_catchup(self):
+    """
+    Periodic safety-net: find every SUCCESS run that has no final_flat_output
+    entry and run the pipeline for it. Fires every 5 minutes via Celery beat.
+    Complements the per-scrape auto-trigger in db_live_sync._auto_run_pipeline().
+    """
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT run_id::text FROM scrape_runs
+            WHERE status = 'SUCCESS'
+              AND run_id::text NOT IN (
+                  SELECT run_id::text FROM final_flat_output
+              )
+        """)
+        missing = [row[0] for row in cur.fetchall()]
+        cur.close()
+        conn.close()
+
+        if not missing:
+            logger.info("✅ Pipeline catchup: all SUCCESS runs already processed")
+            return
+
+        logger.info(f"🔄 Pipeline catchup: {len(missing)} unprocessed run(s) found")
+
+        from RSscraping_backend.backend.db_complete_flow.db_pipeline import run_pipeline_v2
+
+        ok = fail = 0
+        for run_id in missing:
+            try:
+                success = run_pipeline_v2.run_pipeline(run_id)
+                if success:
+                    ok += 1
+                    logger.info(f"✅ Catchup pipeline done: run_id={run_id}")
+                else:
+                    fail += 1
+                    logger.warning(f"⚠️  Catchup pipeline skipped (no data): run_id={run_id}")
+            except Exception as e:
+                fail += 1
+                logger.error(f"❌ Catchup pipeline failed for run_id={run_id}: {e}")
+
+        logger.info(f"📊 Pipeline catchup complete — ok={ok}, failed={fail}")
+
+    except Exception as e:
+        logger.error(f"❌ Pipeline catchup task error: {e}")
 
 
 if __name__ == "__main__":

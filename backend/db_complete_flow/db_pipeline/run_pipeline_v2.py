@@ -73,24 +73,18 @@ def run_pipeline(run_id: str):
     # ── STEP 2: final_data → final_flat_output ────────────────────────────────
     print("\n🔹 STEP 2: Flattening final data")
 
-    rows = finaldb_flatdb.fetch_final_data()
-    step2_done = False
+    row = finaldb_flatdb.fetch_final_data_for_run(run_id)
 
-    for r_id, final_data, created_at in rows:
-        if str(r_id) != str(run_id):
-            continue
-
-        eligible_ncb = finaldb_flatdb.fetch_all_ncb(run_id)
-        flat_rows    = finaldb_flatdb.flatten_final_data(run_id, final_data, eligible_ncb)
-        finaldb_flatdb.save_flat_output(run_id, flat_rows)
-
-        print(f"✅ Step 2 Completed → {len(flat_rows)} rows flattened")
-        step2_done = True
-        break
-
-    if not step2_done:
+    if not row:
         print(f"⚠️  Step 2 skipped — no final_data found for run {run_id}")
         return False
+
+    _, final_data, _ = row
+    run_created_at = finaldb_flatdb.fetch_run_created_at(run_id)
+    eligible_ncb   = finaldb_flatdb.fetch_all_ncb(run_id)
+    flat_rows      = finaldb_flatdb.flatten_final_data(run_id, final_data, eligible_ncb, run_created_at)
+    finaldb_flatdb.save_flat_output(run_id, flat_rows)
+    print(f"✅ Step 2 Completed → {len(flat_rows)} rows flattened")
 
     # ── STEP 3: final_flat_output → Excel ─────────────────────────────────────
     print("\n🔹 STEP 3: Exporting Excel")
@@ -279,13 +273,15 @@ if __name__ == "__main__":
         #     raise ValueError("ids_to_skip.json is empty or missing 'ids' key")
             
 
-        pending = [rid for rid in success_run_ids if rid not in already_processed]
-
-        pending = [rid for rid in pending if rid not in ids_to_skip]
+        if REPROCESS_ALL:
+            pending = [rid for rid in success_run_ids if rid not in ids_to_skip]
+        else:
+            pending = [rid for rid in success_run_ids if rid not in already_processed and rid not in ids_to_skip]
 
         print("-" * 60)
         print(f"SUCCESS runs total: {len(success_run_ids)}")
         print(f"Already in flat table: {len(already_processed)}")
+        print(f"REPROCESS_ALL: {REPROCESS_ALL}")
         print(f"Pending to process: {len(pending)}")
         print("-" * 60)
 

@@ -88,6 +88,7 @@ def send_scrape_row(run_id: str, inp) -> Optional[str]:
     if rto_code:
         rto_code = rto_code.replace("-", "").replace(" ", "")
     ncb_percent = _clean_ncb(parsed.get("ncb_percent"))
+    quotes_url  = parsed.get("quotes_url")
 
     # ── Send Celery task (single dispatch — broker == Azure Redis queue) ──────
     try:
@@ -104,6 +105,7 @@ def send_scrape_row(run_id: str, inp) -> Optional[str]:
             phone=phone,
             policy_expiry=policy_expiry,
             claim_status=claim_status,
+            quotes_url=quotes_url,
         )
 
         logger.info(f"📤 Sent scrape_car → {car_number} | task_id={result.id}")

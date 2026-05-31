@@ -17,7 +17,7 @@ load_dotenv()
 class RTOLocator:
     def __init__(self, csv_path=None):
         if csv_path is None:
-            csv_path = Path(__file__).parent.parent / "rto_locator" / "RTO_vehicle_codes.csv"
+            csv_path = Path(__file__).parent.parent.parent / "rto_locator" / "RTO_vehicle_codes.csv"
         df = pd.read_csv(csv_path)
         df["RegNo"] = df["RegNo"].str.upper().str.strip()
         self._map = {
@@ -43,7 +43,7 @@ class RTOLocator:
 
 
 # ─── SINGLETON ───────────────────────────────────────────────────────────────
-rto_locator = RTOLocator(Path(__file__).parent.parent / "rto_locator" / "RTO_vehicle_codes.csv")
+rto_locator = RTOLocator(Path(__file__).parent.parent.parent / "rto_locator" / "RTO_vehicle_codes.csv")
 
 
 # ─── DB CONFIG ────────────────────────────────────────────────────────────────
@@ -474,6 +474,7 @@ def extract_car_info(response_json: dict) -> dict:
         "modelName":        ga_obj.get("modelName"),
         "vehicle_variant":  api_data.get("variant"),
         "regNo":            registration_no,
+        "rto_code":         rto_code,
         "fuelType":         api_data.get("fuelType"),
         "cubicCapacity":    cubic_capacity,
         "stateCode":        state_code,

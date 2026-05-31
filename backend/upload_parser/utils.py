@@ -72,6 +72,8 @@ TARIFF_RATE_HEADER_ALIASES     = ["tariff rate", "tariff", "tariff %", "tariff_r
 YOM_HEADER_ALIASES             = ["yom", "year of manufacture", "year", "manufacture year",
                                    "model year", "age", "yom / age", "yom/age"]
 SR_NO_HEADER_ALIASES           = ["sr no", "sr", "serial", "s.no", "serial no", "sl no"]
+QUOTES_URL_HEADER_ALIASES      = ["quotes_url", "quotes url", "quote url", "quote_url",
+                                   "pb url", "quote link", "quotes link"]
 
 # Dict used by the no-reg column mapper
 STRUCTURED_FIELD_ALIASES = {
@@ -89,6 +91,7 @@ STRUCTURED_FIELD_ALIASES = {
     "tariff_rate":      TARIFF_RATE_HEADER_ALIASES,
     "yom":              YOM_HEADER_ALIASES,
     "sr_no":            SR_NO_HEADER_ALIASES,
+    "quotes_url":       QUOTES_URL_HEADER_ALIASES,
 }
 
 # Flattened alias list used by auto_header_detect
@@ -99,6 +102,7 @@ ALL_HEADER_ALIASES = [
         + CC_HEADER_ALIASES + CC_RANGE_HEADER_ALIASES + FUEL_TYPE_HEADER_ALIASES
         + RTO_CODE_HEADER_ALIASES + RTO_HEADER_ALIASES + INSURED_COMPANY_HEADER_ALIASES
         + TARIFF_RATE_HEADER_ALIASES + YOM_HEADER_ALIASES + SR_NO_HEADER_ALIASES
+        + QUOTES_URL_HEADER_ALIASES
     )
 ]
 
@@ -405,6 +409,20 @@ def binary_ratio(series, valid_values):
     """Fraction of values (normalized to lowercase) that match a set of valid values."""
     normalized = series.astype(str).str.lower().str.strip()
     return safe_ratio(normalized.isin(valid_values).sum(), len(normalized))
+
+
+# ----------------------------------
+# Quotes URL Validator
+# ----------------------------------
+
+QUOTES_URL_REGEX = re.compile(r'^https?://.+', re.IGNORECASE)
+
+
+def is_valid_quotes_url(value: str) -> bool:
+    """Returns True if value is a non-empty http/https URL."""
+    if not value or not isinstance(value, str):
+        return False
+    return bool(QUOTES_URL_REGEX.match(value.strip()))
 
 
 # ----------------------------------
