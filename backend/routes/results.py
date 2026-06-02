@@ -86,9 +86,9 @@ def get_results(
     from sqlalchemy import cast, func
     from sqlalchemy import Date as SADate
     from datetime import datetime as _dt
+    from sqlalchemy.orm import joinedload, contains_eager
 
-    from sqlalchemy.orm import joinedload
-    query = db.query(FinalFlatOutput).options(joinedload(FinalFlatOutput.scrape_run))
+    query = db.query(FinalFlatOutput)
 
     if run_id:
         query = query.filter(FinalFlatOutput.run_id == run_id)
@@ -96,11 +96,17 @@ def get_results(
     if date:
         try:
             target_date = _dt.strptime(date, "%Y-%m-%d").date()
-            query = query.join(ScrapeRun, ScrapeRun.run_id == FinalFlatOutput.run_id).filter(
-                cast(ScrapeRun.started_at, SADate) == target_date
+            # Use contains_eager — we're doing the join ourselves, so don't also add joinedload
+            query = (
+                query
+                .join(ScrapeRun, ScrapeRun.run_id == FinalFlatOutput.run_id)
+                .options(contains_eager(FinalFlatOutput.scrape_run))
+                .filter(cast(ScrapeRun.started_at, SADate) == target_date)
             )
         except ValueError:
-            pass
+            query = query.options(joinedload(FinalFlatOutput.scrape_run))
+    else:
+        query = query.options(joinedload(FinalFlatOutput.scrape_run))
 
     if sort_dir == "asc":
         query = query.order_by(FinalFlatOutput.created_at.asc())
@@ -184,12 +190,15 @@ def get_results(
             })
             sr_counter += 1
 
-    # Apply search filter across summary values
+    # Apply search filter — each space-separated token must match at least one field
     if search:
-        term = search.lower()
+        tokens = [t for t in search.lower().split() if t]
         all_items = [
             row for row in all_items
-            if any(term in str(v).lower() for v in row["flat_output"].values() if v)
+            if all(
+                any(token in str(v).lower() for v in row["flat_output"].values() if v)
+                for token in tokens
+            )
         ]
 
     total = len(all_items)
