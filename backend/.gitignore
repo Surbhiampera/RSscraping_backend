@@ -37,6 +37,7 @@ venv/
 echo ".venv/
 __pycache__/
 .env
-*.pyc" > .gitignore
-git add .gitignore
-git commit -m "Added gitignore"
+*.pyc" 
+settings.json
+
+
