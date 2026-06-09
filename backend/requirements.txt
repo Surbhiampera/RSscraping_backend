@@ -43,8 +43,5 @@ pydantic
 pydantic-settings
 python-dotenv
 loguru
+pydantic[email]
 
-# ================================
-# Governance / Telemetry
-# ================================
-governance-logger==1.0.0
