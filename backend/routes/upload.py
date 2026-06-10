@@ -4,6 +4,7 @@ from typing import Optional
 
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import exists
 from pydantic import BaseModel
 
 from backend import db
@@ -14,6 +15,7 @@ from backend.db.models import (
     StatusEnum,
     User,
     UploadedFile,
+    QuotesUrlRecord,
 )
 from backend.core.dependencies import get_current_user
 from backend.upload_parser.main import (
@@ -327,4 +329,186 @@ async def upload_single_no_reg(
             upload_mode=UPLOAD_MODE_WITHOUT_REG,
         ),
         message="Single no-reg run created",
+    )
+
+
+class FromDbRequest(BaseModel):
+    limit: int
+    keys: Optional[list[str]] = None  # when provided, create runs only for these profile_unique_keys
+
+
+@router.get("/from-db/preview")
+def preview_from_db(
+    limit: int = 100,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Read-only preview of pending quotes_url records.
+    Applies the same deduplication filter as POST /from-db but creates nothing.
+    """
+    if limit < 1:
+        raise HTTPException(status_code=400, detail="limit must be at least 1")
+
+    done_keys_subquery = (
+        db.query(ScrapeRunInput.profile_unique_key)
+        .join(ScrapeRun, ScrapeRun.run_id == ScrapeRunInput.run_id)
+        .filter(
+            ScrapeRun.status == StatusEnum.PASS_,
+            ScrapeRunInput.profile_unique_key.isnot(None),
+        )
+        .subquery()
+    )
+
+    records = (
+        db.query(QuotesUrlRecord)
+        .filter(
+            QuotesUrlRecord.profile_unique_key.notin_(
+                db.query(done_keys_subquery.c.profile_unique_key)
+            )
+        )
+        .limit(limit)
+        .all()
+    )
+
+    return APIResponse(
+        success=True,
+        message=f"{len(records)} record(s) available",
+        data={
+            "records": [
+                {
+                    "profile_unique_key": rec.profile_unique_key,
+                    "rto_location":       rec.rto_location,
+                    "rto_code":           rec.rto_code,
+                    "make":               rec.make,
+                    "model":              rec.model,
+                    "variant":            rec.variant,
+                    "cc":                 rec.cc,
+                    "cc_range":           rec.cc_range,
+                    "fuel_type":          rec.fuel_type,
+                    "earned_ncb_percent": rec.earned_ncb_percent,
+                    "yom_age":            rec.yom_age,
+                    "quotes_url":         rec.quotes_url,
+                }
+                for rec in records
+            ],
+            "total": len(records),
+        },
+    )
+
+
+@router.post("/from-db", response_model=APIResponse, status_code=status.HTTP_201_CREATED)
+def upload_from_db(
+    body: FromDbRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Create ScrapeRun + ScrapeRunInput rows by fetching records directly from
+    the quotes_url table instead of an Excel upload.
+
+    Deduplication: records whose profile_unique_key already appears in a
+    successfully completed ScrapeRunInput are excluded, so the same vehicle
+    profile is never re-queued after a successful scrape.
+
+    Returns run_ids so the frontend can call POST /api/scrape/start/{run_id}
+    using the exact same Start Scraping flow as after a file upload.
+    """
+    if body.limit < 1:
+        raise HTTPException(status_code=400, detail="limit must be at least 1")
+
+    # Subquery: profile_unique_keys that have already been successfully processed.
+    # A record is considered done when its ScrapeRun reached PASS status.
+    done_keys_subquery = (
+        db.query(ScrapeRunInput.profile_unique_key)
+        .join(ScrapeRun, ScrapeRun.run_id == ScrapeRunInput.run_id)
+        .filter(
+            ScrapeRun.status == StatusEnum.PASS_,
+            ScrapeRunInput.profile_unique_key.isnot(None),
+        )
+        .subquery()
+    )
+
+    base_query = db.query(QuotesUrlRecord).filter(
+        QuotesUrlRecord.profile_unique_key.notin_(
+            db.query(done_keys_subquery.c.profile_unique_key)
+        )
+    )
+
+    if body.keys:
+        records = base_query.filter(
+            QuotesUrlRecord.profile_unique_key.in_(body.keys)
+        ).all()
+    else:
+        records = base_query.limit(body.limit).all()
+
+    if not records:
+        raise HTTPException(
+            status_code=404,
+            detail="No unprocessed records found in quotes_url table",
+        )
+
+    run_dicts   = []
+    input_dicts = []
+    run_ids     = []
+
+    for rec in records:
+        input_data = {}
+        if rec.rto_location:
+            input_data["rto_location"] = rec.rto_location
+        if rec.rto_code:
+            input_data["rto_code"] = rec.rto_code
+        if rec.make:
+            input_data["make"] = rec.make
+        if rec.model:
+            input_data["model"] = rec.model
+        if rec.variant:
+            input_data["variant"] = rec.variant
+        if rec.fuel_type:
+            input_data["fuel_type"] = rec.fuel_type
+        if rec.earned_ncb_percent:
+            input_data["ncb_percent"] = rec.earned_ncb_percent
+        if rec.yom_age:
+            input_data["yom"] = rec.yom_age
+        if rec.quotes_url:
+            input_data["quotes_url"] = rec.quotes_url
+
+        make_slug  = (rec.make  or "")[:8].replace(" ", "")
+        model_slug = (rec.model or "")[:8].replace(" ", "")
+        idx        = len(run_ids)
+        car_number = f"NOREG{idx:05d}_{make_slug}_{model_slug}"[:50]
+
+        run_id = uuid.uuid4()
+        run_dicts.append({
+            "run_id":       run_id,
+            "user_id":      current_user.id,
+            "status":       StatusEnum.PENDING,
+            "total_inputs": 1,
+        })
+        input_dicts.append({
+            "run_id":            run_id,
+            "car_number":        car_number,
+            "is_valid":          True,
+            "input_data":        json.dumps(input_data),
+            "profile_unique_key": rec.profile_unique_key,
+        })
+        run_ids.append(run_id)
+
+    for rd in run_dicts:
+        db.add(ScrapeRun(**rd))
+    db.flush()
+
+    if input_dicts:
+        db.execute(insert(ScrapeRunInput), input_dicts)
+
+    db.commit()
+
+    return APIResponse(
+        success=True,
+        message=f"{len(run_ids)} run(s) created from database",
+        data={
+            "run_ids":    [str(r) for r in run_ids],
+            "total_runs": len(run_ids),
+            "source":     "database",
+        },
     )
