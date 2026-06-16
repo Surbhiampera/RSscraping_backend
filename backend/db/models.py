@@ -518,3 +518,32 @@ class QuotesUrlRecord(Base):
     profile_identifier_key = Column(Text, nullable=True)
     created_at             = Column(DateTime, nullable=True)
     updated_at             = Column(DateTime, nullable=True)
+
+
+# ========================
+# QUOTES URL V3
+# ========================
+
+class QuotesUrlV3Record(Base):
+    __tablename__ = "quotes_url_v3"
+
+    id                     = Column(BigInteger, primary_key=True, autoincrement=True)
+    rto_location           = Column(Text, nullable=True)
+    rto_code               = Column(Text, nullable=True)
+    make                   = Column(Text, nullable=True)
+    model                  = Column(Text, nullable=True)
+    variant                = Column(Text, nullable=True)
+    cc                     = Column(Integer, nullable=True)
+    cc_range               = Column(Text, nullable=True)
+    fuel_type              = Column(Text, nullable=True)
+    earned_ncb_percent     = Column(Text, nullable=True)
+    yom_age                = Column(Text, nullable=True)
+    quotes_url             = Column(Text, nullable=True)
+    rs_present             = Column(Boolean, nullable=True)
+    remarks                = Column(Text, nullable=True)
+    profile_unique_key     = Column(Text, nullable=True)
+    profile_identifier_key = Column(Text, nullable=True)
+    # possible values: pending | inprogress | completed
+    status                 = Column(Text, nullable=True)
+    created_at             = Column(DateTime, nullable=True)
+    updated_at             = Column(DateTime, nullable=True)

@@ -15,7 +15,7 @@ from backend.db.models import (
     StatusEnum,
     User,
     UploadedFile,
-    QuotesUrlRecord,
+    QuotesUrlV3Record,
 )
 from backend.core.dependencies import get_current_user
 from backend.upload_parser.main import (
@@ -334,7 +334,7 @@ async def upload_single_no_reg(
 
 class FromDbRequest(BaseModel):
     limit: int
-    keys: Optional[list[str]] = None  # when provided, create runs only for these profile_unique_keys
+    keys: Optional[list[str]] = None
 
 
 @router.get("/from-db/preview")
@@ -343,27 +343,30 @@ def preview_from_db(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Read-only preview of pending quotes_url records.
-    Applies the same deduplication filter as POST /from-db but creates nothing.
-    """
+    """Read-only preview of pending quotes_url_v3 records."""
     if limit < 1:
         raise HTTPException(status_code=400, detail="limit must be at least 1")
+
+    Model = QuotesUrlV3Record
 
     done_keys_subquery = (
         db.query(ScrapeRunInput.profile_unique_key)
         .join(ScrapeRun, ScrapeRun.run_id == ScrapeRunInput.run_id)
         .filter(
-            ScrapeRun.status == StatusEnum.PASS_,
+            ScrapeRun.status.in_([
+                StatusEnum.PASS_,
+                StatusEnum.PENDING,
+                StatusEnum.PROCESSING,
+            ]),
             ScrapeRunInput.profile_unique_key.isnot(None),
         )
         .subquery()
     )
 
     records = (
-        db.query(QuotesUrlRecord)
+        db.query(Model)
         .filter(
-            QuotesUrlRecord.profile_unique_key.notin_(
+            Model.profile_unique_key.notin_(
                 db.query(done_keys_subquery.c.profile_unique_key)
             )
         )
@@ -417,27 +420,37 @@ def upload_from_db(
     if body.limit < 1:
         raise HTTPException(status_code=400, detail="limit must be at least 1")
 
-    # Subquery: profile_unique_keys that have already been successfully processed.
-    # A record is considered done when its ScrapeRun reached PASS status.
+    Model = QuotesUrlV3Record
+    table_name = "quotes_url_v3"
+
+    # Subquery: profile_unique_keys that are already in an active or completed run.
+    # PASS      → done, never re-queue
+    # PENDING   → queued but not started yet, skip to avoid duplicates
+    # PROCESSING → currently running, skip to avoid duplicates
+    # FAIL / CANCELLED → eligible to be re-queued (intentional retry behaviour)
     done_keys_subquery = (
         db.query(ScrapeRunInput.profile_unique_key)
         .join(ScrapeRun, ScrapeRun.run_id == ScrapeRunInput.run_id)
         .filter(
-            ScrapeRun.status == StatusEnum.PASS_,
+            ScrapeRun.status.in_([
+                StatusEnum.PASS_,
+                StatusEnum.PENDING,
+                StatusEnum.PROCESSING,
+            ]),
             ScrapeRunInput.profile_unique_key.isnot(None),
         )
         .subquery()
     )
 
-    base_query = db.query(QuotesUrlRecord).filter(
-        QuotesUrlRecord.profile_unique_key.notin_(
+    base_query = db.query(Model).filter(
+        Model.profile_unique_key.notin_(
             db.query(done_keys_subquery.c.profile_unique_key)
         )
     )
 
     if body.keys:
         records = base_query.filter(
-            QuotesUrlRecord.profile_unique_key.in_(body.keys)
+            Model.profile_unique_key.in_(body.keys)
         ).all()
     else:
         records = base_query.limit(body.limit).all()
@@ -445,7 +458,7 @@ def upload_from_db(
     if not records:
         raise HTTPException(
             status_code=404,
-            detail="No unprocessed records found in quotes_url table",
+            detail=f"No unprocessed records found in {table_name} table",
         )
 
     run_dicts   = []
@@ -505,10 +518,10 @@ def upload_from_db(
 
     return APIResponse(
         success=True,
-        message=f"{len(run_ids)} run(s) created from database",
+        message=f"{len(run_ids)} run(s) created from {table_name}",
         data={
             "run_ids":    [str(r) for r in run_ids],
             "total_runs": len(run_ids),
-            "source":     "database",
+            "source":     table_name,
         },
     )
