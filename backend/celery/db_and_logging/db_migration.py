@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS scrape_runs (
     total_duration_ms INTEGER,
 
     notes TEXT,
+    profile_unique_key TEXT,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -184,6 +185,10 @@ ALTER TABLE scrape_run_inputs
     ALTER COLUMN policy_expiry TYPE VARCHAR(50) USING policy_expiry::text;
 ALTER TABLE scrape_run_inputs
 ADD CONSTRAINT unique_run_id UNIQUE (run_id);
+
+-- Add profile_unique_key to scrape_runs if not already present
+ALTER TABLE scrape_runs ADD COLUMN IF NOT EXISTS profile_unique_key TEXT;
+CREATE INDEX IF NOT EXISTS ix_scrape_runs_profile_unique_key ON scrape_runs (profile_unique_key);
 """
  
 # ===============================

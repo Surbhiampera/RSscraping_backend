@@ -143,6 +143,9 @@ class ScrapeRun(Base):
 
     notes = Column(Text, nullable=True)
 
+    # Full combination of RTO/Code, Make, Model, Variant, Fuel Type, Earned NCB %, and YOM/Age
+    profile_unique_key = Column(Text, nullable=True, index=True)
+
     created_at = Column(
         DateTime,
         default=datetime.utcnow,

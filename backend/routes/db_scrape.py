@@ -1,11 +1,11 @@
 import json
 import uuid
-from datetime import date, datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import distinct, insert
+from sqlalchemy import and_, distinct, insert, or_
 from sqlalchemy.orm import Session
 
 from backend.core.dependencies import get_current_user
@@ -21,6 +21,12 @@ from backend.schemas.common import APIResponse
 from backend.services.scrape_service import start_scrape_run
 
 router = APIRouter()
+
+
+def _today_utc_window():
+    """Return (start_of_today_utc, start_of_tomorrow_utc) for date-bounded queries."""
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    return today_start, today_start + timedelta(days=1)
 
 
 # ========================
@@ -139,44 +145,38 @@ def validate_scrape(
     if not body.profile_unique_keys:
         raise HTTPException(status_code=400, detail="No profile_unique_keys provided")
 
-    today_start = datetime.combine(date.today(), datetime.min.time())
-    today_end   = datetime.combine(date.today(), datetime.max.time())
-
-    # Keys that have an active or completed run created today
-    active_keys = (
-        db.query(ScrapeRunInput.profile_unique_key)
-        .join(ScrapeRun, ScrapeRun.run_id == ScrapeRunInput.run_id)
+    # Block records that are currently inprogress (still being scraped), OR
+    # completed TODAY (already scraped today). Records completed on prior days
+    # are eligible for re-scraping and are NOT blocked.
+    today_start, tomorrow_start = _today_utc_window()
+    blocked_records = (
+        db.query(QuotesUrlV3Record)
         .filter(
-            ScrapeRunInput.profile_unique_key.in_(body.profile_unique_keys),
-            ScrapeRun.created_at >= today_start,
-            ScrapeRun.created_at <= today_end,
-            ScrapeRun.status.in_([
-                StatusEnum.PASS_,
-                StatusEnum.PENDING,
-                StatusEnum.PROCESSING,
-            ]),
+            QuotesUrlV3Record.profile_unique_key.in_(body.profile_unique_keys),
+            or_(
+                QuotesUrlV3Record.status == "inprogress",
+                and_(
+                    QuotesUrlV3Record.status == "completed",
+                    QuotesUrlV3Record.updated_at >= today_start,
+                    QuotesUrlV3Record.updated_at < tomorrow_start,
+                ),
+            ),
         )
         .all()
     )
-    active_key_set = {row[0] for row in active_keys}
-
-    # Fetch identity details for already-done records to show meaningful warnings
-    already_done_records = (
-        db.query(QuotesUrlV3Record)
-        .filter(QuotesUrlV3Record.profile_unique_key.in_(active_key_set))
-        .all()
-    ) if active_key_set else []
+    active_key_set = {r.profile_unique_key for r in blocked_records}
 
     already_done = [
         {
-            "profile_unique_key":   r.profile_unique_key,
-            "make":                 r.make,
-            "model":                r.model,
-            "rto_code":             r.rto_code,
-            "earned_ncb_percent":   r.earned_ncb_percent,
-            "yom_age":              r.yom_age,
+            "profile_unique_key": r.profile_unique_key,
+            "make":               r.make,
+            "model":              r.model,
+            "rto_code":           r.rto_code,
+            "earned_ncb_percent": r.earned_ncb_percent,
+            "yom_age":            r.yom_age,
+            "status":             r.status,
         }
-        for r in already_done_records
+        for r in blocked_records
     ]
 
     safe_to_scrape = [k for k in body.profile_unique_keys if k not in active_key_set]
@@ -218,33 +218,26 @@ def start_db_scrape(
     if not body.profile_unique_keys:
         raise HTTPException(status_code=400, detail="No profile_unique_keys provided")
 
-    today_start = datetime.combine(date.today(), datetime.min.time())
-    today_end   = datetime.combine(date.today(), datetime.max.time())
-
-    # Server-side conflict check (same logic as /validate)
-    active_keys_rows = (
-        db.query(ScrapeRunInput.profile_unique_key)
-        .join(ScrapeRun, ScrapeRun.run_id == ScrapeRunInput.run_id)
+    # Block records that are inprogress (currently being scraped) OR completed today.
+    # Records completed on previous days are eligible for re-scraping.
+    today_start, tomorrow_start = _today_utc_window()
+    blocked_records = (
+        db.query(QuotesUrlV3Record)
         .filter(
-            ScrapeRunInput.profile_unique_key.in_(body.profile_unique_keys),
-            ScrapeRun.created_at >= today_start,
-            ScrapeRun.created_at <= today_end,
-            ScrapeRun.status.in_([
-                StatusEnum.PASS_,
-                StatusEnum.PENDING,
-                StatusEnum.PROCESSING,
-            ]),
+            QuotesUrlV3Record.profile_unique_key.in_(body.profile_unique_keys),
+            or_(
+                QuotesUrlV3Record.status == "inprogress",
+                and_(
+                    QuotesUrlV3Record.status == "completed",
+                    QuotesUrlV3Record.updated_at >= today_start,
+                    QuotesUrlV3Record.updated_at < tomorrow_start,
+                ),
+            ),
         )
         .all()
     )
-    active_key_set = {row[0] for row in active_keys_rows}
 
-    if active_key_set:
-        conflict_records = (
-            db.query(QuotesUrlV3Record)
-            .filter(QuotesUrlV3Record.profile_unique_key.in_(active_key_set))
-            .all()
-        )
+    if blocked_records:
         conflicts = [
             {
                 "profile_unique_key": r.profile_unique_key,
@@ -253,14 +246,15 @@ def start_db_scrape(
                 "rto_code":           r.rto_code,
                 "earned_ncb_percent": r.earned_ncb_percent,
                 "yom_age":            r.yom_age,
+                "status":             r.status,
             }
-            for r in conflict_records
+            for r in blocked_records
         ]
         raise HTTPException(
             status_code=409,
             detail={
                 "message": (
-                    f"{len(conflicts)} profile(s) have already been scraped or are in progress today. "
+                    f"{len(conflicts)} profile(s) are already {', '.join({r['status'] for r in conflicts})}. "
                     "Remove them from your selection and try again."
                 ),
                 "conflicts": conflicts,
@@ -308,10 +302,11 @@ def start_db_scrape(
 
         run_id = uuid.uuid4()
         run_dicts.append({
-            "run_id":       run_id,
-            "user_id":      current_user.id,
-            "status":       StatusEnum.PENDING,
-            "total_inputs": 1,
+            "run_id":              run_id,
+            "user_id":             current_user.id,
+            "status":              StatusEnum.PENDING,
+            "total_inputs":        1,
+            "profile_unique_key":  rec.profile_unique_key,
         })
         input_dicts.append({
             "run_id":              run_id,
@@ -330,6 +325,16 @@ def start_db_scrape(
         db.execute(insert(ScrapeRunInput), input_dicts)
 
     db.commit()
+
+    # Mark records as inprogress in quotes_url_v3 — this is the deduplication source of truth.
+    # Any subsequent validate/start call will see these as blocked until the Celery task
+    # updates them to 'completed' (or 'pending' on failure).
+    queued_keys = [rec.profile_unique_key for rec in records if rec.profile_unique_key]
+    if queued_keys:
+        db.query(QuotesUrlV3Record).filter(
+            QuotesUrlV3Record.profile_unique_key.in_(queued_keys)
+        ).update({"status": "inprogress", "updated_at": datetime.utcnow()}, synchronize_session=False)
+        db.commit()
 
     # Auto-start every run immediately (same pipeline as Excel-upload flow)
     started_run_ids = []
