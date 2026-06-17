@@ -231,6 +231,8 @@ def scrape_car(
     claim_status: Optional[str] = None,
     quotes_url: Optional[str] = None,
     user_profile_dir: Optional[str] = None,
+    profile_unique_key: Optional[str] = None,
+    profile_identifier_key: Optional[str] = None,
 ):
 
     car_label = f"{car_brand or ''} {car_model or ''} {variant or ''}".strip() or run_id
@@ -341,6 +343,49 @@ def scrape_car(
                 conn.close()
             except Exception:
                 pass
+
+
+# ============================================================================
+# DUMMY TEST TASK — separate queue, no real scraping, no DB writes
+# ============================================================================
+
+@app.task(
+    bind=True,
+    queue='test_queue',
+    name='scrape_car_test',
+)
+def scrape_car_test(
+    self,
+    run_id,
+    car_brand: Optional[str] = None,
+    car_model: Optional[str] = None,
+    fuel_type: Optional[str] = None,
+    variant: Optional[str] = None,
+    year: Optional[str] = None,
+    rto_code: Optional[str] = None,
+    ncb_percent: Optional[str] = None,
+    cust_name: Optional[str] = None,
+    phone: Optional[str] = None,
+    policy_expiry: Optional[str] = None,
+    claim_status: Optional[str] = None,
+    quotes_url: Optional[str] = None,
+    user_profile_dir: Optional[str] = None,
+    profile_unique_key: Optional[str] = None,
+    profile_identifier_key: Optional[str] = None,
+):
+    """Dummy stand-in for scrape_car — logs received kwargs and returns immediately.
+    Runs on 'test_queue' so it never competes with real scrape_car work on 'celery'."""
+    car_label = f"{car_brand or ''} {car_model or ''} {variant or ''}".strip() or run_id
+    logger.info(f"[TEST] scrape_car_test received run_id={run_id} car={car_label} "
+                f"rto={rto_code} ncb={ncb_percent} profile_unique_key={profile_unique_key} "
+                f"profile_identifier_key={profile_identifier_key}")
+    return {
+        "status": "TEST_OK",
+        "run_id": run_id,
+        "car_label": car_label,
+        "profile_unique_key": profile_unique_key,
+        "profile_identifier_key": profile_identifier_key,
+    }
 
 
 @app.task(bind=True, base=CallbackTask)

@@ -180,36 +180,6 @@ class LiveDBSync:
         if status == "SUCCESS":
             self._auto_run_pipeline()
 
-        # Write outcome back to quotes_url_v3 (only affects DB-scrape flows;
-        # Excel/manual runs have no profile_unique_key in scrape_run_inputs so this is a no-op).
-        self._sync_v3_status(status)
-
-    def _sync_v3_status(self, task_status: str):
-        """Update quotes_url_v3.status for records linked to this run via scrape_run_inputs."""
-        try:
-            cur = self.conn.cursor()
-            cur.execute(
-                "SELECT profile_unique_key FROM scrape_run_inputs "
-                "WHERE run_id = %s AND profile_unique_key IS NOT NULL",
-                (self.run_id,)
-            )
-            rows = cur.fetchall()
-            if not rows:
-                cur.close()
-                return
-            keys = [row[0] for row in rows]
-            new_status = "completed" if task_status == "SUCCESS" else "pending"
-            cur.execute(
-                "UPDATE quotes_url_v3 SET status = %s, updated_at = NOW() "
-                "WHERE profile_unique_key = ANY(%s)",
-                (new_status, keys)
-            )
-            self.conn.commit()
-            cur.close()
-            print(f"✅ quotes_url_v3 status → '{new_status}' for {len(keys)} record(s) (run_id={self.run_id})")
-        except Exception as e:
-            print(f"⚠️  Could not sync quotes_url_v3 status: {e}")
-
     def _auto_run_pipeline(self):
         """Automatically run the quotes pipeline to populate final_flat_output."""
         try:

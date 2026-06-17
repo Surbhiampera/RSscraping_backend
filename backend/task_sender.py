@@ -19,7 +19,7 @@ from typing import List, Optional, Dict, Any
 
 from celery.result import AsyncResult
 from backend.celery_worker import celery_app
-from backend.celery.task_queue.tasks import scrape_car
+from backend.celery.task_queue.tasks import scrape_car, scrape_car_test
 
 # ── Logging ────────────────────────────────────────────────────────────────
 
@@ -70,12 +70,14 @@ def send_scrape_row(run_id: str, inp) -> Optional[str]:
     Returns:
         task_id (str) or None
     """
-    car_number    = inp.car_number
-    cust_name     = getattr(inp, "customer_name", None)
-    phone         = getattr(inp, "phone", None)
-    policy_expiry = getattr(inp, "policy_expiry", None)
-    claim_status  = getattr(inp, "claim_status", None)
-    input_data    = getattr(inp, "input_data", None)   # None → with_reg, str → without_reg
+    car_number             = inp.car_number
+    cust_name              = getattr(inp, "customer_name", None)
+    phone                  = getattr(inp, "phone", None)
+    policy_expiry          = getattr(inp, "policy_expiry", None)
+    claim_status           = getattr(inp, "claim_status", None)
+    input_data             = getattr(inp, "input_data", None)   # None → with_reg, str → without_reg
+    profile_unique_key     = getattr(inp, "profile_unique_key", None)
+    profile_identifier_key = getattr(inp, "profile_identifier_key", None)
 
     # ── Parse no-reg fields from input_data JSON ─────────────────────────────
     parsed    = json.loads(input_data) if input_data else {}
@@ -106,6 +108,8 @@ def send_scrape_row(run_id: str, inp) -> Optional[str]:
             policy_expiry=policy_expiry,
             claim_status=claim_status,
             quotes_url=quotes_url,
+            profile_unique_key=profile_unique_key,
+            profile_identifier_key=profile_identifier_key,
         )
 
         logger.info(f"📤 Sent scrape_car → {car_number} | task_id={result.id}")
@@ -113,6 +117,63 @@ def send_scrape_row(run_id: str, inp) -> Optional[str]:
 
     except Exception as e:
         logger.error(f"❌ Celery dispatch failed for {car_number}: {e}")
+        return None
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# 🧪 TEST DISPATCH — sends to scrape_car_test on 'test_queue' (no real scraping)
+# ───────────────────────────────────────────────────────────────────────────
+
+def send_test_scrape_row(run_id: str, inp) -> Optional[str]:
+    """
+    Same shape as send_scrape_row, but dispatches to the dummy scrape_car_test
+    task on 'test_queue'. Use this to verify dispatch wiring (e.g. profile_unique_key /
+    profile_identifier_key flow) without touching the real scraper or 'celery' queue.
+    """
+    car_number    = inp.car_number
+    cust_name     = getattr(inp, "customer_name", None)
+    phone         = getattr(inp, "phone", None)
+    policy_expiry = getattr(inp, "policy_expiry", None)
+    claim_status  = getattr(inp, "claim_status", None)
+    input_data    = getattr(inp, "input_data", None)
+    profile_unique_key     = getattr(inp, "profile_unique_key", None)
+    profile_identifier_key = getattr(inp, "profile_identifier_key", None)
+
+    parsed    = json.loads(input_data) if input_data else {}
+    car_brand = parsed.get("make")
+    car_model = parsed.get("model")
+    fuel_type = parsed.get("fuel_type")
+    variant   = _strip_cc(parsed.get("variant"))
+    year      = parsed.get("yom")
+    rto_code    = parsed.get("rto_code") or parsed.get("rto_location")
+    if rto_code:
+        rto_code = rto_code.replace("-", "").replace(" ", "")
+    ncb_percent = _clean_ncb(parsed.get("ncb_percent"))
+    quotes_url  = parsed.get("quotes_url")
+
+    try:
+        result = scrape_car_test.delay(
+            run_id=run_id,
+            car_brand=car_brand,
+            car_model=car_model,
+            fuel_type=fuel_type,
+            variant=variant,
+            year=year,
+            rto_code=rto_code,
+            ncb_percent=ncb_percent,
+            cust_name=cust_name,
+            phone=phone,
+            policy_expiry=policy_expiry,
+            claim_status=claim_status,
+            quotes_url=quotes_url,
+            profile_unique_key=profile_unique_key,
+            profile_identifier_key=profile_identifier_key,
+        )
+        logger.info(f"🧪 Sent scrape_car_test → {car_number} | task_id={result.id}")
+        return result.id
+
+    except Exception as e:
+        logger.error(f"❌ Test dispatch failed for {car_number}: {e}")
         return None
 
 

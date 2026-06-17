@@ -270,6 +270,7 @@ class ScrapeRunInput(Base):
     # Unique profile fingerprint from quotes_url table — used to prevent
     # re-queuing records that were already successfully processed.
     profile_unique_key = Column(Text, nullable=True, index=True)
+    profile_identifier_key = Column(Text, nullable=True)
 
     created_at = Column(
         DateTime,
