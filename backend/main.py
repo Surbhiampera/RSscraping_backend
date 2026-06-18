@@ -18,6 +18,8 @@ try:
             "ALTER TABLE scrape_run_inputs ADD COLUMN IF NOT EXISTS input_data TEXT",
             "ALTER TABLE scrape_run_inputs ADD COLUMN IF NOT EXISTS profile_unique_key TEXT",
             "CREATE INDEX IF NOT EXISTS ix_scrape_run_inputs_profile_unique_key ON scrape_run_inputs (profile_unique_key)",
+            "ALTER TABLE scrape_runs ADD COLUMN IF NOT EXISTS profile_identifier_key TEXT",
+            "CREATE INDEX IF NOT EXISTS ix_scrape_runs_profile_identifier_key ON scrape_runs (profile_identifier_key)",
             "ALTER TABLE car_info ADD COLUMN IF NOT EXISTS status statusenum DEFAULT 'PENDING'",
             "ALTER TABLE car_info ADD COLUMN IF NOT EXISTS error_message TEXT",
             # scrape_runs: old pipeline schema may not have created_at / updated_at

@@ -341,11 +341,12 @@ def start_db_scrape(
 
         run_id = uuid.uuid4()
         run_dicts.append({
-            "run_id":              run_id,
-            "user_id":             current_user.id,
-            "status":              StatusEnum.PENDING,
-            "total_inputs":        1,
-            "profile_unique_key":  rec.profile_unique_key,
+            "run_id":                 run_id,
+            "user_id":                current_user.id,
+            "status":                 StatusEnum.PENDING,
+            "total_inputs":           1,
+            "profile_unique_key":     rec.profile_unique_key,
+            "profile_identifier_key": rec.profile_identifier_key,
         })
         input_dicts.append({
             "run_id":                 run_id,

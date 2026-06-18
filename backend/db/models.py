@@ -146,6 +146,9 @@ class ScrapeRun(Base):
     # Full combination of RTO/Code, Make, Model, Variant, Fuel Type, Earned NCB %, and YOM/Age
     profile_unique_key = Column(Text, nullable=True, index=True)
 
+    # Full combination of Make, Model, and Variant
+    profile_identifier_key = Column(Text, nullable=True, index=True)
+
     created_at = Column(
         DateTime,
         default=datetime.utcnow,

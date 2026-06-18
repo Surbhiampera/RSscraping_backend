@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS scrape_runs (
 
     notes TEXT,
     profile_unique_key TEXT,
+    profile_identifier_key TEXT,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -189,6 +190,10 @@ ADD CONSTRAINT unique_run_id UNIQUE (run_id);
 -- Add profile_unique_key to scrape_runs if not already present
 ALTER TABLE scrape_runs ADD COLUMN IF NOT EXISTS profile_unique_key TEXT;
 CREATE INDEX IF NOT EXISTS ix_scrape_runs_profile_unique_key ON scrape_runs (profile_unique_key);
+
+-- Add profile_identifier_key (Make, Model, Variant combination) to scrape_runs if not already present
+ALTER TABLE scrape_runs ADD COLUMN IF NOT EXISTS profile_identifier_key TEXT;
+CREATE INDEX IF NOT EXISTS ix_scrape_runs_profile_identifier_key ON scrape_runs (profile_identifier_key);
 """
  
 # ===============================
