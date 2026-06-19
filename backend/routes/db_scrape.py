@@ -71,12 +71,12 @@ def get_filter_options(
 @router.get("/records", response_model=APIResponse)
 def list_db_records(
     make: Optional[str] = Query(None),
-    model: Optional[str] = Query(None),
+    model: Optional[List[str]] = Query(None),
     ncb_percent: Optional[List[str]] = Query(None, description="Filter by NCB%: 0, 25, 35"),
-    rto_code: Optional[str] = Query(None),
+    rto_code: Optional[List[str]] = Query(None),
     rs_present: Optional[bool] = Query(None),
     profile_unique_key: Optional[str] = Query(None),
-    yom: Optional[str] = Query(None),
+    yom: Optional[List[str]] = Query(None),
     profile_identifier_key: Optional[str] = Query(None),
     status: Optional[str] = Query(None, description="pending | inprogress | completed"),
     page: int = Query(1, ge=1),
@@ -91,17 +91,17 @@ def list_db_records(
     if make:
         query = query.filter(QuotesUrlV3Record.make == make)
     if model:
-        query = query.filter(QuotesUrlV3Record.model == model)
+        query = query.filter(QuotesUrlV3Record.model.in_(model))
     if ncb_percent:
         query = query.filter(QuotesUrlV3Record.earned_ncb_percent.in_(ncb_percent))
     if rto_code:
-        query = query.filter(QuotesUrlV3Record.rto_code == rto_code)
+        query = query.filter(QuotesUrlV3Record.rto_code.in_(rto_code))
     if rs_present is not None:
         query = query.filter(QuotesUrlV3Record.rs_present == rs_present)
     if profile_unique_key:
         query = query.filter(QuotesUrlV3Record.profile_unique_key == profile_unique_key)
     if yom:
-        query = query.filter(QuotesUrlV3Record.yom_age == yom)
+        query = query.filter(QuotesUrlV3Record.yom_age.in_(yom))
     if profile_identifier_key:
         query = query.filter(QuotesUrlV3Record.profile_identifier_key == profile_identifier_key)
     if status:

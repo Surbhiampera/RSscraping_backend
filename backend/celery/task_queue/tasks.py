@@ -256,9 +256,9 @@ def scrape_car(
             sys.path.insert(0, pb_scripts_path)
 
         try:
-            from pb_scraper.cmf_locator_v2 import run as run_scraper
+            from cmf_locator_v6 import run as run_scraper
         except ImportError:
-            logger.error(f"❌ Could not import pb_flow from {pb_scripts_path}")
+            logger.error(f"❌ Could not import cmf_locator_v6 from {project_root}")
             raise
 
         # Initialize DB sync
@@ -275,6 +275,7 @@ def scrape_car(
         asyncio.run(
             run_scraper(
                 run_id=run_id,
+                quotes_url=quotes_url,
                 car_brand=car_brand,
                 car_model=car_model,
                 fuel_type=fuel_type,
@@ -285,8 +286,9 @@ def scrape_car(
                 phone=phone,
                 policy_expiry=policy_expiry,
                 claim_status=claim_status,
-                QUOTES_URL=quotes_url,
-                user_profile_dir=user_profile_dir,
+                ncb_percent=ncb_percent,
+                profile_unique_key=profile_unique_key,
+                profile_identifier_key=profile_identifier_key,
             )
         )
         logger.info(f"✓ Scraping completed")

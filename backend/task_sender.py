@@ -96,18 +96,16 @@ def send_scrape_row(run_id: str, inp) -> Optional[str]:
     try:
         result = scrape_car.delay(
             run_id=run_id,
+            quotes_url=quotes_url,
             car_brand=car_brand,
             car_model=car_model,
             fuel_type=fuel_type,
             variant=variant,
             year=year,
             rto_code=rto_code,
-            ncb_percent=ncb_percent,
-            cust_name=cust_name,
-            phone=phone,
             policy_expiry=policy_expiry,
             claim_status=claim_status,
-            quotes_url=quotes_url,
+            ncb_percent=ncb_percent,
             profile_unique_key=profile_unique_key,
             profile_identifier_key=profile_identifier_key,
         )
