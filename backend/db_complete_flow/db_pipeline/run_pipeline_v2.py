@@ -18,22 +18,32 @@ if db_path not in sys.path:
 # ------------------------------------------------
 # Import your scripts
 # ------------------------------------------------
-import RSscraping_backend.backend.db_complete_flow.db_pipeline.responses_final_v2 as responses_final_v2
-import RSscraping_backend.backend.db_complete_flow.db_pipeline.finaldb_flatdb as finaldb_flatdb
-import RSscraping_backend.backend.db_complete_flow.db_pipeline.flatdb_excel as flatdb_excel
+import backend.db_complete_flow.db_pipeline.responses_final_v2 as responses_final_v2
+import backend.db_complete_flow.db_pipeline.finaldb_flatdb as finaldb_flatdb
+import backend.db_complete_flow.db_pipeline.flatdb_excel as flatdb_excel
 
 REPROCESS_ALL = True  # set False normally
 
 # ------------------------------------------------
 # Fetch all SUCCESS run_ids from scrape_runs
 # ------------------------------------------------
-def fetch_success_run_ids(conn) -> list:
+def fetch_success_run_ids(conn, target_date: str = None) -> list:
+    """target_date: 'YYYY-MM-DD' string. Defaults to today (CURRENT_DATE) if not given."""
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute("""
-            SELECT run_id FROM scrape_runs
-            WHERE status = 'SUCCESS'
-            ORDER BY started_at ASC
-        """)
+        if target_date:
+            cur.execute("""
+                SELECT run_id FROM scrape_runs
+                WHERE status = 'SUCCESS'
+                  AND started_at::date = %s
+                ORDER BY started_at ASC
+            """, (target_date,))
+        else:
+            cur.execute("""
+                SELECT run_id FROM scrape_runs
+                WHERE status = 'SUCCESS'
+                  AND started_at::date = CURRENT_DATE
+                ORDER BY started_at ASC
+            """)
         return [str(row["run_id"]) for row in cur.fetchall()]
 
 
@@ -187,14 +197,21 @@ def main():
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 2:
+    import re
+    arg = sys.argv[1] if len(sys.argv) == 2 else None
+    is_date = bool(arg and re.fullmatch(r"\d{4}-\d{2}-\d{2}", arg))
+
+    if arg and not is_date:
         # Usage: python run_pipeline_v2.py <runid>
-        reprocess_single_run(sys.argv[1])
+        reprocess_single_run(arg)
     else:
+        # Usage: python run_pipeline_v2.py [YYYY-MM-DD]   (defaults to today)
+        target_date = arg if is_date else None
+
         # Original batch behavior
         conn = responses_final_v2.get_conn()
         try:
-            success_run_ids = fetch_success_run_ids(conn)
+            success_run_ids = fetch_success_run_ids(conn, target_date)
             already_processed = fetch_already_processed_run_ids(conn)
         finally:
             conn.close()
